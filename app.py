@@ -241,17 +241,17 @@ def generate_word():
                 # Formación académica sin tabla, solo texto alineado
                 if high_school or institution:
                     p_sec = doc.add_paragraph()
-                    run_sec_label = p_sec.add_run("BACHILLER")
+                    run_sec_label = p_sec.add_run("BACHILLER: ")
                     run_sec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_sec_label.bold = True
-                    run_sec_valor = p_sec.add_run(f"                                            {high_school}")
+                    run_sec_valor = p_sec.add_run(high_school)
                     run_sec_valor.font.color.rgb = RGBColor(0, 0, 0)
                     
                     p_inst = doc.add_paragraph()
-                    run_inst_label = p_inst.add_run("INSTITUCION")
+                    run_inst_label = p_inst.add_run("INSTITUCION: ")
                     run_inst_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_inst_label.bold = True
-                    run_inst_valor = p_inst.add_run(f"                                           {institution}")
+                    run_inst_valor = p_inst.add_run(institution)
                     run_inst_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Formación técnica/universitaria (puede haber múltiples)
@@ -267,8 +267,11 @@ def generate_word():
                         run_tec_label = p_tec.add_run(tipo_form)
                         run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                         run_tec_label.bold = True
-                        # El valor en la misma línea, alineado como BACHILLER e INSTITUCION
-                        run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                        # El valor en la misma línea con dos puntos
+                        run_tec_colon = p_tec.add_run(": ")
+                        run_tec_colon.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_tec_colon.bold = True
+                        run_tec_valor = p_tec.add_run(nombre_form)
                         run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Salto de página después de formación académica (inicio de hoja 2 para referencias)
@@ -295,17 +298,17 @@ def generate_word():
                 # Formación académica sin tabla, solo texto alineado
                 if high_school or institution:
                     p_sec = doc.add_paragraph()
-                    run_sec_label = p_sec.add_run("BACHILLER")
+                    run_sec_label = p_sec.add_run("BACHILLER: ")
                     run_sec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_sec_label.bold = True
-                    run_sec_valor = p_sec.add_run(f"                                            {high_school}")
+                    run_sec_valor = p_sec.add_run(high_school)
                     run_sec_valor.font.color.rgb = RGBColor(0, 0, 0)
                     
                     p_inst = doc.add_paragraph()
-                    run_inst_label = p_inst.add_run("INSTITUCION")
+                    run_inst_label = p_inst.add_run("INSTITUCION: ")
                     run_inst_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_inst_label.bold = True
-                    run_inst_valor = p_inst.add_run(f"                                           {institution}")
+                    run_inst_valor = p_inst.add_run(institution)
                     run_inst_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Formación técnica/universitaria (puede haber múltiples)
@@ -321,8 +324,11 @@ def generate_word():
                         run_tec_label = p_tec.add_run(tipo_form)
                         run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                         run_tec_label.bold = True
-                        # El valor en la misma línea, alineado como BACHILLER e INSTITUCION
-                        run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                        # El valor en la misma línea con dos puntos
+                        run_tec_colon = p_tec.add_run(": ")
+                        run_tec_colon.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_tec_colon.bold = True
+                        run_tec_valor = p_tec.add_run(nombre_form)
                         run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 doc.add_paragraph()
