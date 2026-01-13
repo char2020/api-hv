@@ -4,7 +4,7 @@ from docx import Document
 from docx.shared import RGBColor, Pt, Inches
 from docx.oxml import parse_xml
 from docx.oxml.ns import qn
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 import os
 import re
 import io
@@ -12,9 +12,6 @@ from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para llamadas desde React
-
-# Ruta a la plantilla Word
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates', 'hv.docx')
 
 @app.route('/', methods=['GET'])
 def root():
@@ -33,193 +30,373 @@ def health():
     """Endpoint de salud para verificar que el servidor está funcionando"""
     return jsonify({"status": "ok", "message": "API funcionando correctamente"})
 
-def reemplazar_en_parrafo(paragraph, reemplazos, es_encabezado=False, es_final=False):
-    """Reemplaza variables en un párrafo preservando el formato"""
-    texto_original = paragraph.text
-    texto_nuevo = texto_original
-    
-    for variable, valor in reemplazos.items():
-        if variable in texto_nuevo:
-            texto_nuevo = texto_nuevo.replace(variable, valor)
-    
-    if texto_nuevo != texto_original:
-        if paragraph.runs:
-            # Preservar formato del primer run
-            formato_original = None
-            if paragraph.runs:
-                primer_run = paragraph.runs[0]
-                formato_original = {
-                    'font_name': primer_run.font.name if primer_run.font.name else None,
-                    'font_size': primer_run.font.size if primer_run.font.size else None,
-                    'bold': primer_run.bold,
-                    'italic': primer_run.italic,
-                    'color': primer_run.font.color.rgb if primer_run.font.color and primer_run.font.color.rgb else None
-                }
-            paragraph.clear()
-            nuevo_run = paragraph.add_run(texto_nuevo)
-            if formato_original:
-                if formato_original['font_name']:
-                    nuevo_run.font.name = formato_original['font_name']
-                if formato_original['font_size']:
-                    nuevo_run.font.size = formato_original['font_size']
-                if formato_original['color']:
-                    nuevo_run.font.color.rgb = formato_original['color']
-                nuevo_run.bold = formato_original['bold']
-                nuevo_run.italic = formato_original['italic']
-        else:
-            paragraph.text = texto_nuevo
-
-def reemplazar_en_encabezados(doc, reemplazos):
-    """Reemplaza variables en encabezados y pies de página"""
-    for section in doc.sections:
-        # Encabezado
-        header = section.header
-        for paragraph in header.paragraphs:
-            reemplazar_en_parrafo(paragraph, reemplazos, es_encabezado=True)
-        # Pie de página
-        footer = section.footer
-        for paragraph in footer.paragraphs:
-            reemplazar_en_parrafo(paragraph, reemplazos, es_encabezado=True)
-
 @app.route('/generate-word', methods=['POST'])
 def generate_word():
-    """Genera un documento Word a partir de los datos recibidos"""
+    """Genera un documento Word desde cero con todos los datos recibidos"""
     try:
         data = request.json
         
-        # Validar que existe la plantilla
-        if not os.path.exists(TEMPLATE_PATH):
-            return jsonify({"error": "Plantilla no encontrada"}), 404
-        
-        # Cargar la plantilla
-        doc = Document(TEMPLATE_PATH)
-        
         # Obtener datos básicos
         nombre = data.get('fullName', '').strip()
+        cedula = data.get('idNumber', '').strip()
+        fecha = data.get('birthDate', '').strip()
+        telefono = data.get('phone', '').strip()
         direccion = data.get('address', '').strip()
+        ciudad = data.get('place', '').strip()
+        estado_civil = data.get('estadoCivil', '').strip()
         correo = data.get('email', '').strip()
+        exp = data.get('idIssuePlace', '').strip()
         texto_perfil = data.get('profile', '').strip()
-        
-        # Obtener formaciones
-        formaciones = data.get('formaciones', [])
-        texto_formacion = ""
-        if formaciones:
-            primera_formacion = formaciones[0]
-            tipo = primera_formacion.get('tipo', '')
-            nombre_formacion = primera_formacion.get('nombre', '')
-            texto_formacion = f"{tipo}: {nombre_formacion}" if tipo else nombre_formacion
-        
-        # Preparar reemplazos básicos (con variaciones de mayúsculas)
-        reemplazos = {
-            'nombre_01': nombre,
-            'cedula': data.get('idNumber', '').strip(),
-            'n_fecha': data.get('birthDate', '').strip(),
-            'n_numer': data.get('phone', '').strip(),
-            'dire_01': direccion,
-            'Dire_01': direccion,
-            'DIRE_01': direccion,
-            'ciu_01': data.get('place', '').strip(),
-            'est_01': data.get('estadoCivil', '').strip(),
-            'exp_01': data.get('idIssuePlace', '').strip(),
-            'exp_var': data.get('idIssuePlace', '').strip(),
-            'perfil_01': texto_perfil,
-            'Perfil_01': texto_perfil,
-            'PERFIL_01': texto_perfil,
-            'bac_01': data.get('highSchool', '').strip(),
-            'cole_01': data.get('institution', '').strip(),
-            'tec_01': texto_formacion,
-        }
-        
-        # Agregar correo solo si tiene valor
-        if correo:
-            reemplazos['corr_01'] = correo
-        
-        # Agregar formaciones adicionales
-        for i, form in enumerate(formaciones, start=1):
-            tipo = form.get('tipo', '')
-            nombre_formacion = form.get('nombre', '')
-            texto = f"{tipo}: {nombre_formacion}" if tipo else nombre_formacion
-            reemplazos[f'tec_{i:02d}'] = texto
-            reemplazos[f'tec_0{i}'] = texto
-            reemplazos[f'tec_{i}'] = texto
         
         # Obtener referencias
         referencias_familiares = data.get('referenciasFamiliares', [])
         referencias_personales = data.get('referenciasPersonales', [])
         
-        # Agregar referencias familiares
-        for i, ref in enumerate(referencias_familiares, start=1):
-            nombre_ref = ref.get('nombre', '').strip()
-            telefono_ref = ref.get('telefono', '').strip()
-            reemplazos[f'Re_fam_{i:02d}'] = nombre_ref
-            reemplazos[f'Re_fam_0{i}'] = nombre_ref
-            reemplazos[f'Re_fam_{i}'] = nombre_ref
-            reemplazos[f'Re_fam_1'] = nombre_ref if i == 1 else reemplazos.get('Re_fam_1', '')
-            reemplazos[f'cel_f_{i:02d}'] = telefono_ref
-            reemplazos[f'cel_f_0{i}'] = telefono_ref
-            reemplazos[f'cel_f_{i}'] = telefono_ref
-            reemplazos['cel_f_01'] = telefono_ref if i == 1 else reemplazos.get('cel_f_01', '')
-            reemplazos['cel_f_1'] = telefono_ref if i == 1 else reemplazos.get('cel_f_1', '')
-        
-        # Agregar referencias personales
-        for i, ref in enumerate(referencias_personales, start=1):
-            nombre_ref = ref.get('nombre', '').strip()
-            telefono_ref = ref.get('telefono', '').strip()
-            reemplazos[f'Re_per_{i:02d}'] = nombre_ref
-            reemplazos[f'Re_per_0{i}'] = nombre_ref
-            reemplazos[f'Re_per_{i}'] = nombre_ref
-            reemplazos[f'Re_per_1'] = nombre_ref if i == 1 else reemplazos.get('Re_per_1', '')
-            reemplazos[f'cel_p_{i:02d}'] = telefono_ref
-            reemplazos[f'cel_p_0{i}'] = telefono_ref
-            reemplazos[f'cel_p_{i}'] = telefono_ref
-            reemplazos['cel_p_01'] = telefono_ref if i == 1 else reemplazos.get('cel_p_01', '')
-            reemplazos['cel_p_1'] = telefono_ref if i == 1 else reemplazos.get('cel_p_1', '')
-        
         # Obtener experiencias laborales
         experiencias = data.get('experiencias', [])
-        if experiencias:
-            primera_exp = experiencias[0]
-            reemplazos['local_01'] = primera_exp.get('empresa', '').strip()
-            reemplazos['car_01'] = primera_exp.get('cargo', '').strip()
-            fecha_inicio = primera_exp.get('fechaInicio', '').strip()
-            fecha_fin = primera_exp.get('fechaFin', '').strip()
-            tiempo = f"Desde {fecha_inicio} hasta {fecha_fin}" if fecha_inicio and fecha_fin else ""
-            reemplazos['tiempo_01'] = tiempo
+        
+        # Obtener formaciones académicas
+        formaciones = data.get('formaciones', [])
+        high_school = data.get('highSchool', '').strip()
+        institution = data.get('institution', '').strip()
+        
+        # Crear un nuevo documento desde cero
+        doc = Document()
+        
+        # Configurar encabezado con fondo azul
+        section = doc.sections[0]
+        header = section.header
+        
+        # Limpiar párrafos existentes del encabezado
+        for para in header.paragraphs:
+            para.clear()
+        
+        # Crear nuevo párrafo para el encabezado
+        header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Agregar fondo azul al encabezado usando XML
+        header_xml = header_para._element
+        pPr = header_xml.get_or_add_pPr()
+        
+        # Crear elemento de sombreado (fondo azul #5B9BD5)
+        shd = parse_xml(r'<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:fill="5B9BD5" w:val="clear"/>')
+        pPr.append(shd)
+        
+        # Agregar espaciado superior e inferior para que el fondo se vea como una barra
+        spacing = parse_xml(r'<w:spacing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:before="240" w:after="240"/>')
+        pPr.append(spacing)
+        
+        # Agregar indentación derecha para que el texto no toque el borde
+        ind = parse_xml(r'<w:ind xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:right="360"/>')
+        pPr.append(ind)
+        
+        # Agregar el nombre en blanco, negrita
+        header_run = header_para.add_run(nombre.upper())
+        header_run.font.name = "Calibri"
+        header_run.font.size = Pt(11)
+        header_run.font.color.rgb = RGBColor(255, 255, 255)  # Blanco
+        header_run.bold = True
+        
+        # Agregar espacio
+        doc.add_paragraph()
+        
+        # Nombre principal (Cambria 18, color #4472C4, mayúsculas, negrita)
+        p_nombre = doc.add_paragraph()
+        run_nombre = p_nombre.add_run(nombre.upper())
+        run_nombre.font.name = "Cambria"
+        run_nombre.font.size = Pt(18)
+        run_nombre.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_nombre.bold = True
+        p_nombre.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        doc.add_paragraph()
+        
+        # Información personal - etiquetas en negrita azul, valores en negro
+        p_cedula = doc.add_paragraph()
+        run_cedula_label = p_cedula.add_run("Número de cédula: ")
+        run_cedula_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_cedula_label.bold = True
+        run_cedula_valor = p_cedula.add_run(cedula)
+        run_cedula_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        p_fecha = doc.add_paragraph()
+        run_fecha_label = p_fecha.add_run("Fecha de nacimiento: ")
+        run_fecha_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_fecha_label.bold = True
+        run_fecha_valor = p_fecha.add_run(fecha)
+        run_fecha_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        p_tel = doc.add_paragraph()
+        run_tel_label = p_tel.add_run("Teléfono móvil: ")
+        run_tel_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_tel_label.bold = True
+        run_tel_valor = p_tel.add_run(telefono)
+        run_tel_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        p_dir = doc.add_paragraph()
+        run_dir_label = p_dir.add_run("Dirección: ")
+        run_dir_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_dir_label.bold = True
+        run_dir_valor = p_dir.add_run(direccion)
+        run_dir_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        p_ciu = doc.add_paragraph()
+        run_ciu_label = p_ciu.add_run("Ciudad: ")
+        run_ciu_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_ciu_label.bold = True
+        run_ciu_valor = p_ciu.add_run(ciudad)
+        run_ciu_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        p_est = doc.add_paragraph()
+        run_est_label = p_est.add_run("Estado civil: ")
+        run_est_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_est_label.bold = True
+        run_est_valor = p_est.add_run(estado_civil)
+        run_est_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        if correo:
+            p_corr = doc.add_paragraph()
+            run_corr_label = p_corr.add_run("Correo: ")
+            run_corr_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+            run_corr_label.bold = True
+            run_corr_valor = p_corr.add_run(correo)
+            run_corr_valor.font.color.rgb = RGBColor(0, 0, 0)
+        
+        # Perfil Profesional - título en azul, negrita, mayúsculas
+        if texto_perfil:
+            p_perfil_titulo = doc.add_paragraph()
+            p_perfil_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run_perfil_titulo = p_perfil_titulo.add_run("PERFIL PROFESIONAL")
+            run_perfil_titulo.bold = True
+            run_perfil_titulo.font.size = Pt(12)
+            run_perfil_titulo.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+            doc.add_paragraph()
             
-            # Agregar experiencias adicionales
-            for i, exp in enumerate(experiencias[1:], start=2):
-                reemplazos[f'local_{i:02d}'] = exp.get('empresa', '').strip()
-                reemplazos[f'car_{i:02d}'] = exp.get('cargo', '').strip()
-                fecha_inicio = exp.get('fechaInicio', '').strip()
-                fecha_fin = exp.get('fechaFin', '').strip()
-                tiempo = f"Desde {fecha_inicio} hasta {fecha_fin}" if fecha_inicio and fecha_fin else ""
-                reemplazos[f'tiempo_{i:02d}'] = tiempo
+            p_perfil_texto = doc.add_paragraph()
+            p_perfil_texto.add_run(texto_perfil)
         
-        # Reemplazar en encabezados y pies de página primero
-        reemplazar_en_encabezados(doc, reemplazos)
+        # Si NO hay experiencia laboral, agregar formación académica en la hoja 1
+        if not experiencias:
+            # Solo agregar formación académica si hay datos
+            if high_school or institution or formaciones:
+                doc.add_paragraph()
+                doc.add_paragraph()
+                
+                # Formación Académica - título en azul, negrita, mayúsculas (hoja 1)
+                p_formacion_titulo = doc.add_paragraph()
+                p_formacion_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run_formacion_titulo = p_formacion_titulo.add_run("FORMACIÓN ACADÉMICA")
+                run_formacion_titulo.bold = True
+                run_formacion_titulo.font.size = Pt(12)
+                run_formacion_titulo.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                doc.add_paragraph()
+                
+                # Formación académica sin tabla, solo texto alineado
+                if high_school or institution:
+                    p_sec = doc.add_paragraph()
+                    run_sec_label = p_sec.add_run("SECUNDARIA")
+                    run_sec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_sec_label.bold = True
+                    run_sec_valor = p_sec.add_run(f"                                            {high_school}")
+                    run_sec_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    p_inst = doc.add_paragraph()
+                    run_inst_label = p_inst.add_run("INSTITUCION")
+                    run_inst_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_inst_label.bold = True
+                    run_inst_valor = p_inst.add_run(f"                                           {institution}")
+                    run_inst_valor.font.color.rgb = RGBColor(0, 0, 0)
+                
+                # Formación técnica/universitaria (puede haber múltiples)
+                for form in formaciones:
+                    doc.add_paragraph()
+                    p_tec = doc.add_paragraph()
+                    tipo_form = form.get('tipo', '').upper()
+                    nombre_form = form.get('nombre', '')
+                    run_tec_label = p_tec.add_run(tipo_form)
+                    run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_tec_label.bold = True
+                    run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                    run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
+                
+                # Salto de página después de formación académica (inicio de hoja 2 para referencias)
+                p_break1 = doc.add_paragraph()
+                run_break1 = p_break1.add_run()
+                run_break1.add_break(WD_BREAK.PAGE)
+        else:
+            # Si hay experiencia laboral, salto de página después del perfil profesional (inicio de hoja 2)
+            p_break1 = doc.add_paragraph()
+            run_break1 = p_break1.add_run()
+            run_break1.add_break(WD_BREAK.PAGE)
+            
+            # Formación Académica - título en azul, negrita, mayúsculas (hoja 2)
+            # Solo agregar si hay datos
+            if high_school or institution or formaciones:
+                p_formacion_titulo = doc.add_paragraph()
+                p_formacion_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run_formacion_titulo = p_formacion_titulo.add_run("FORMACIÓN ACADÉMICA")
+                run_formacion_titulo.bold = True
+                run_formacion_titulo.font.size = Pt(12)
+                run_formacion_titulo.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                doc.add_paragraph()
+                
+                # Formación académica sin tabla, solo texto alineado
+                if high_school or institution:
+                    p_sec = doc.add_paragraph()
+                    run_sec_label = p_sec.add_run("SECUNDARIA")
+                    run_sec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_sec_label.bold = True
+                    run_sec_valor = p_sec.add_run(f"                                            {high_school}")
+                    run_sec_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    p_inst = doc.add_paragraph()
+                    run_inst_label = p_inst.add_run("INSTITUCION")
+                    run_inst_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_inst_label.bold = True
+                    run_inst_valor = p_inst.add_run(f"                                           {institution}")
+                    run_inst_valor.font.color.rgb = RGBColor(0, 0, 0)
+                
+                # Formación técnica/universitaria (puede haber múltiples)
+                for form in formaciones:
+                    doc.add_paragraph()
+                    p_tec = doc.add_paragraph()
+                    tipo_form = form.get('tipo', '').upper()
+                    nombre_form = form.get('nombre', '')
+                    run_tec_label = p_tec.add_run(tipo_form)
+                    run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_tec_label.bold = True
+                    run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                    run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
+                
+                doc.add_paragraph()
+                doc.add_paragraph()
         
-        # Reemplazar en párrafos del cuerpo
-        total_paragraphs = len(doc.paragraphs)
-        for idx, paragraph in enumerate(doc.paragraphs):
-            es_final = (idx >= total_paragraphs - 3) and "nombre_01" in paragraph.text
-            reemplazar_en_parrafo(paragraph, reemplazos, es_encabezado=False, es_final=es_final)
+        # Experiencia Laboral - título en azul, negrita, mayúsculas, centrado (hoja 2, solo si hay experiencia)
+        if experiencias:
+            p_exp_titulo = doc.add_paragraph()
+            p_exp_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run_exp_titulo = p_exp_titulo.add_run("EXPERIENCIA LABORAL")
+            run_exp_titulo.bold = True
+            run_exp_titulo.font.size = Pt(12)
+            run_exp_titulo.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+            doc.add_paragraph()
+            
+            for experiencia in experiencias:
+                # Las experiencias pueden venir con 'empresa' o 'local', 'cargo' o 'cargo', 'tiempo' o 'fechaInicio/fechaFin'
+                empresa = experiencia.get('empresa', experiencia.get('local', '')).strip()
+                cargo = experiencia.get('cargo', '').strip()
+                tiempo = experiencia.get('tiempo', '')
+                
+                # Si no viene tiempo, construirlo desde fechaInicio y fechaFin
+                if not tiempo:
+                    fecha_inicio = experiencia.get('fechaInicio', '').strip()
+                    fecha_fin = experiencia.get('fechaFin', '').strip()
+                    if fecha_inicio and fecha_fin:
+                        tiempo = f"Desde {fecha_inicio} hasta {fecha_fin}"
+                
+                if empresa and cargo:
+                    p_estab = doc.add_paragraph()
+                    run_estab_label = p_estab.add_run("ESTABLECIMIENTO: ")
+                    run_estab_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_estab_label.bold = True
+                    run_estab_valor = p_estab.add_run(empresa)
+                    run_estab_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    p_cargo = doc.add_paragraph()
+                    run_cargo_label = p_cargo.add_run("CARGO: ")
+                    run_cargo_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_cargo_label.bold = True
+                    run_cargo_valor = p_cargo.add_run(cargo)
+                    run_cargo_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    if tiempo:
+                        p_periodo = doc.add_paragraph()
+                        run_periodo_label = p_periodo.add_run("PERIODO LABORAL: ")
+                        run_periodo_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_periodo_label.bold = True
+                        run_periodo_valor = p_periodo.add_run(tiempo)
+                        run_periodo_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    doc.add_paragraph()
+                    doc.add_paragraph()
+            
+            # Si hay experiencia, salto de página para referencias (hoja 3)
+            p_break2 = doc.add_paragraph()
+            run_break2 = p_break2.add_run()
+            run_break2.add_break(WD_BREAK.PAGE)
         
-        # Reemplazar en tablas
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        es_final = "nombre_01" in paragraph.text
-                        reemplazar_en_parrafo(paragraph, reemplazos, es_encabezado=False, es_final=es_final)
+        # Referencias Familiares - título en azul, negrita, mayúsculas, centrado
+        # Solo agregar si hay referencias familiares
+        if referencias_familiares:
+            p_ref_fam_titulo = doc.add_paragraph()
+            p_ref_fam_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run_ref_fam_titulo = p_ref_fam_titulo.add_run("REFERENCIAS FAMILIARES")
+            run_ref_fam_titulo.bold = True
+            run_ref_fam_titulo.font.size = Pt(12)
+            run_ref_fam_titulo.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+            doc.add_paragraph()
+            
+            for ref in referencias_familiares:
+                nombre_ref = ref.get('nombre', '').strip()
+                telefono_ref = ref.get('telefono', ref.get('celular', '')).strip()
+                
+                if nombre_ref:
+                    p_ref_fam_nombre = doc.add_paragraph()
+                    run_ref_fam_nombre = p_ref_fam_nombre.add_run(nombre_ref)
+                    run_ref_fam_nombre.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_ref_fam_nombre.italic = True
+                    
+                    if telefono_ref:
+                        p_ref_fam_tel = doc.add_paragraph()
+                        run_ref_fam_tel = p_ref_fam_tel.add_run(f"Teléfono: {telefono_ref}")
+                        run_ref_fam_tel.bold = True
+                        run_ref_fam_tel.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    doc.add_paragraph()
         
-        # Reemplazo adicional específico para dire_01 (case-insensitive)
-        if direccion:
-            for paragraph in doc.paragraphs:
-                texto = paragraph.text
-                if "dire_01" in texto.lower() and direccion not in texto:
-                    texto_nuevo = re.sub(r'dire_01', direccion, texto, flags=re.IGNORECASE)
-                    if texto_nuevo != texto:
-                        reemplazar_en_parrafo(paragraph, {'dire_01': direccion}, es_encabezado=False)
+        # Referencias Personales - título en azul, negrita, mayúsculas, centrado
+        # Solo agregar si hay referencias personales
+        if referencias_personales:
+            p_ref_per_titulo = doc.add_paragraph()
+            p_ref_per_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run_ref_per_titulo = p_ref_per_titulo.add_run("REFERENCIAS PERSONALES")
+            run_ref_per_titulo.bold = True
+            run_ref_per_titulo.font.size = Pt(12)
+            run_ref_per_titulo.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+            doc.add_paragraph()
+            
+            for ref in referencias_personales:
+                nombre_ref = ref.get('nombre', '').strip()
+                telefono_ref = ref.get('telefono', ref.get('celular', '')).strip()
+                
+                if nombre_ref:
+                    p_ref_per_nombre = doc.add_paragraph()
+                    run_ref_per_nombre = p_ref_per_nombre.add_run(nombre_ref)
+                    run_ref_per_nombre.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                    run_ref_per_nombre.italic = True
+                    
+                    if telefono_ref:
+                        p_ref_per_tel = doc.add_paragraph()
+                        run_ref_per_tel = p_ref_per_tel.add_run(f"Teléfono: {telefono_ref}")
+                        run_ref_per_tel.bold = True
+                        run_ref_per_tel.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    doc.add_paragraph()
+        
+        # Espacios finales antes del pie de página
+        doc.add_paragraph()
+        doc.add_paragraph()
+        doc.add_paragraph()
+        
+        # Pie de página con nombre en azul, negrita, mayúsculas
+        p_final = doc.add_paragraph()
+        run_final = p_final.add_run(nombre.upper())
+        run_final.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+        run_final.bold = True
+        
+        p_cedula_final = doc.add_paragraph()
+        run_cedula_final = p_cedula_final.add_run(f"C.C. {cedula} de {exp}")
+        run_cedula_final.font.color.rgb = RGBColor(0, 0, 0)
         
         # Guardar en memoria
         output = io.BytesIO()
@@ -245,4 +422,3 @@ if __name__ == '__main__':
     # Crear directorio de templates si no existe
     os.makedirs(os.path.join(os.path.dirname(__file__), 'templates'), exist_ok=True)
     app.run(debug=True, host='0.0.0.0', port=5000)
-
