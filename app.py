@@ -13,6 +13,52 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para llamadas desde React
 
+# Meses en español
+MESES = {
+    1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+    5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+    9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+}
+
+def formatear_fecha(fecha_str: str) -> str:
+    """Convierte una fecha a formato '20 de noviembre de 1990'
+    Acepta formatos: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY
+    """
+    if not fecha_str:
+        return ''
+    
+    fecha_str = fecha_str.strip()
+    
+    try:
+        # Intentar formato YYYY-MM-DD (estándar de date picker)
+        if fecha_str.count('-') == 2:
+            partes = fecha_str.split('-')
+            if len(partes[0]) == 4:  # YYYY-MM-DD
+                año, mes, dia = partes
+                año, mes, dia = int(año), int(mes), int(dia)
+                if 1 <= mes <= 12 and 1 <= dia <= 31:
+                    return f"{dia} de {MESES[mes]} de {año}"
+        
+        # Intentar formato DD/MM/YYYY o DD-MM-YYYY
+        if fecha_str.count('/') == 2 or fecha_str.count('-') == 2:
+            separador = '/' if '/' in fecha_str else '-'
+            partes = fecha_str.split(separador)
+            if len(partes) == 3:
+                # Determinar si es DD/MM/YYYY o MM/DD/YYYY
+                # Asumimos DD/MM/YYYY si el primer número es <= 31
+                if int(partes[0]) <= 31:
+                    dia, mes, año = int(partes[0]), int(partes[1]), int(partes[2])
+                else:
+                    mes, dia, año = int(partes[0]), int(partes[1]), int(partes[2])
+                
+                if 1 <= mes <= 12 and 1 <= dia <= 31:
+                    return f"{dia} de {MESES[mes]} de {año}"
+    except (ValueError, IndexError, KeyError):
+        pass
+    
+    # Si no se puede parsear, devolver la fecha original
+    return fecha_str
+
 @app.route('/', methods=['GET'])
 def root():
     """Endpoint raíz para verificar que el servidor está funcionando"""
@@ -39,7 +85,8 @@ def generate_word():
         # Obtener datos básicos
         nombre = data.get('fullName', '').strip()
         cedula = data.get('idNumber', '').strip()
-        fecha = data.get('birthDate', '').strip()
+        fecha_raw = data.get('birthDate', '').strip()
+        fecha = formatear_fecha(fecha_raw)  # Convertir a formato "20 de noviembre de 1990"
         telefono = data.get('phone', '').strip()
         direccion = data.get('address', '').strip()
         ciudad = data.get('place', '').strip()
@@ -194,7 +241,7 @@ def generate_word():
                 # Formación académica sin tabla, solo texto alineado
                 if high_school or institution:
                     p_sec = doc.add_paragraph()
-                    run_sec_label = p_sec.add_run("SECUNDARIA")
+                    run_sec_label = p_sec.add_run("BACHILLER")
                     run_sec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_sec_label.bold = True
                     run_sec_valor = p_sec.add_run(f"                                            {high_school}")
@@ -216,7 +263,9 @@ def generate_word():
                     run_tec_label = p_tec.add_run(tipo_form)
                     run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_tec_label.bold = True
-                    run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                    # El valor en una línea separada, alineado como BACHILLER e INSTITUCION
+                    p_tec_valor = doc.add_paragraph()
+                    run_tec_valor = p_tec_valor.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
                     run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Salto de página después de formación académica (inicio de hoja 2 para referencias)
@@ -243,7 +292,7 @@ def generate_word():
                 # Formación académica sin tabla, solo texto alineado
                 if high_school or institution:
                     p_sec = doc.add_paragraph()
-                    run_sec_label = p_sec.add_run("SECUNDARIA")
+                    run_sec_label = p_sec.add_run("BACHILLER")
                     run_sec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_sec_label.bold = True
                     run_sec_valor = p_sec.add_run(f"                                            {high_school}")
@@ -265,7 +314,9 @@ def generate_word():
                     run_tec_label = p_tec.add_run(tipo_form)
                     run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
                     run_tec_label.bold = True
-                    run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                    # El valor en una línea separada, alineado como BACHILLER e INSTITUCION
+                    p_tec_valor = doc.add_paragraph()
+                    run_tec_valor = p_tec_valor.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
                     run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 doc.add_paragraph()
@@ -348,9 +399,12 @@ def generate_word():
                     
                     if telefono_ref:
                         p_ref_fam_tel = doc.add_paragraph()
-                        run_ref_fam_tel = p_ref_fam_tel.add_run(f"Teléfono: {telefono_ref}")
-                        run_ref_fam_tel.bold = True
-                        run_ref_fam_tel.font.color.rgb = RGBColor(0, 0, 0)
+                        run_ref_fam_tel_label = p_ref_fam_tel.add_run("Teléfono: ")
+                        run_ref_fam_tel_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_ref_fam_tel_label.bold = True
+                        run_ref_fam_tel_valor = p_ref_fam_tel.add_run(telefono_ref)
+                        run_ref_fam_tel_valor.font.color.rgb = RGBColor(0, 0, 0)
+                        run_ref_fam_tel_valor.bold = True
                     
                     doc.add_paragraph()
         
@@ -377,9 +431,12 @@ def generate_word():
                     
                     if telefono_ref:
                         p_ref_per_tel = doc.add_paragraph()
-                        run_ref_per_tel = p_ref_per_tel.add_run(f"Teléfono: {telefono_ref}")
-                        run_ref_per_tel.bold = True
-                        run_ref_per_tel.font.color.rgb = RGBColor(0, 0, 0)
+                        run_ref_per_tel_label = p_ref_per_tel.add_run("Teléfono: ")
+                        run_ref_per_tel_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_ref_per_tel_label.bold = True
+                        run_ref_per_tel_valor = p_ref_per_tel.add_run(telefono_ref)
+                        run_ref_per_tel_valor.font.color.rgb = RGBColor(0, 0, 0)
+                        run_ref_per_tel_valor.bold = True
                     
                     doc.add_paragraph()
         
