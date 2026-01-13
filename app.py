@@ -255,18 +255,21 @@ def generate_word():
                     run_inst_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Formación técnica/universitaria (puede haber múltiples)
+                # Solo agregar si NO es "Bachiller" (ya está arriba)
                 for form in formaciones:
-                    doc.add_paragraph()
-                    p_tec = doc.add_paragraph()
-                    tipo_form = form.get('tipo', '').upper()
-                    nombre_form = form.get('nombre', '')
-                    run_tec_label = p_tec.add_run(tipo_form)
-                    run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
-                    run_tec_label.bold = True
-                    # El valor en una línea separada, alineado como BACHILLER e INSTITUCION
-                    p_tec_valor = doc.add_paragraph()
-                    run_tec_valor = p_tec_valor.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
-                    run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    tipo_form = form.get('tipo', '').strip().upper()
+                    nombre_form = form.get('nombre', '').strip()
+                    
+                    # Filtrar: no mostrar si es "BACHILLER" (ya está en la sección de secundaria)
+                    if tipo_form and tipo_form != 'BACHILLER' and nombre_form:
+                        doc.add_paragraph()
+                        p_tec = doc.add_paragraph()
+                        run_tec_label = p_tec.add_run(tipo_form)
+                        run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_tec_label.bold = True
+                        # El valor en la misma línea, alineado como BACHILLER e INSTITUCION
+                        run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                        run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Salto de página después de formación académica (inicio de hoja 2 para referencias)
                 p_break1 = doc.add_paragraph()
@@ -306,18 +309,21 @@ def generate_word():
                     run_inst_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 # Formación técnica/universitaria (puede haber múltiples)
+                # Solo agregar si NO es "Bachiller" (ya está arriba)
                 for form in formaciones:
-                    doc.add_paragraph()
-                    p_tec = doc.add_paragraph()
-                    tipo_form = form.get('tipo', '').upper()
-                    nombre_form = form.get('nombre', '')
-                    run_tec_label = p_tec.add_run(tipo_form)
-                    run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
-                    run_tec_label.bold = True
-                    # El valor en una línea separada, alineado como BACHILLER e INSTITUCION
-                    p_tec_valor = doc.add_paragraph()
-                    run_tec_valor = p_tec_valor.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
-                    run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
+                    tipo_form = form.get('tipo', '').strip().upper()
+                    nombre_form = form.get('nombre', '').strip()
+                    
+                    # Filtrar: no mostrar si es "BACHILLER" (ya está en la sección de secundaria)
+                    if tipo_form and tipo_form != 'BACHILLER' and nombre_form:
+                        doc.add_paragraph()
+                        p_tec = doc.add_paragraph()
+                        run_tec_label = p_tec.add_run(tipo_form)
+                        run_tec_label.font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+                        run_tec_label.bold = True
+                        # El valor en la misma línea, alineado como BACHILLER e INSTITUCION
+                        run_tec_valor = p_tec.add_run(f"                                                 {form.get('tipo', '')}: {nombre_form}")
+                        run_tec_valor.font.color.rgb = RGBColor(0, 0, 0)
                 
                 doc.add_paragraph()
                 doc.add_paragraph()
