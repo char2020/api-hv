@@ -16,6 +16,18 @@ CORS(app)  # Permitir CORS para llamadas desde React
 # Ruta a la plantilla Word
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates', 'hv.docx')
 
+@app.route('/', methods=['GET'])
+def root():
+    """Endpoint raíz para verificar que el servidor está funcionando"""
+    return jsonify({
+        "status": "ok", 
+        "message": "API de Generación de Hojas de Vida funcionando",
+        "endpoints": {
+            "/health": "GET - Verificar estado del servidor",
+            "/generate-word": "POST - Generar documento Word"
+        }
+    })
+
 @app.route('/health', methods=['GET'])
 def health():
     """Endpoint de salud para verificar que el servidor está funcionando"""
