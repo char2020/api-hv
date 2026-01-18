@@ -8,10 +8,43 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 import os
 import re
 import io
+import base64
+import requests
+import time
 from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para llamadas desde React
+
+# Configuración de APIs de iLovePDF
+# API Principal: Usada en la API de cursos-certificados (GitHub) - ~250 conversiones
+# API de Respaldo: Para cuando se agoten los créditos de la principal - ~250 conversiones
+# Total disponible: ~500 conversiones
+ILOVEPDF_APIS = [
+    {
+        'name': 'primary',
+        # API Principal - Credenciales de la API de cursos-certificados
+        # TODO: Reemplazar con las credenciales reales de la API principal
+        'public_key': os.getenv('ILOVEPDF_PRIMARY_PUBLIC_KEY', None),  # Agregar aquí la public_key principal
+        'secret_key': os.getenv('ILOVEPDF_PRIMARY_SECRET_KEY', None)   # Agregar aquí la secret_key principal
+    },
+    {
+        'name': 'backup',
+        # API de Respaldo - Se usa automáticamente cuando la principal se queda sin créditos
+        'public_key': 'project_public_e8de4c9dde8d3130930dc8f9620f9fd0_4gcUq34631a35630e89502c9cb2229d123ff4',
+        'secret_key': 'secret_key_5f1ab1bb9dc866aadc8a05671e460491_zNqoaf28f8b33e1755f025940359d1d4a70a3'
+    }
+]
+
+# INSTRUCCIONES PARA CONFIGURAR LA API PRINCIPAL:
+# 1. Busca las credenciales de iLovePDF en el código de la API de cursos-certificados (GitHub)
+# 2. Reemplaza los valores None arriba con las credenciales reales, O
+# 3. Configura variables de entorno en Render:
+#    - ILOVEPDF_PRIMARY_PUBLIC_KEY = "tu_public_key_aqui"
+#    - ILOVEPDF_PRIMARY_SECRET_KEY = "tu_secret_key_aqui"
+
+# Variable para rastrear qué API está activa
+current_api_index = 0
 
 # Meses en español
 MESES = {
@@ -67,7 +100,8 @@ def root():
         "message": "API de Generación de Hojas de Vida funcionando",
         "endpoints": {
             "/health": "GET - Verificar estado del servidor",
-            "/generate-word": "POST - Generar documento Word"
+            "/generate-word": "POST - Generar documento Word",
+            "/convert-word-to-pdf": "POST - Convertir Word a PDF usando iLovePDF"
         }
     })
 
@@ -75,6 +109,185 @@ def root():
 def health():
     """Endpoint de salud para verificar que el servidor está funcionando"""
     return jsonify({"status": "ok", "message": "API funcionando correctamente"})
+
+def convert_word_to_pdf_with_ilovepdf(word_file_bytes, filename='document.docx'):
+    """
+    Convierte un archivo Word a PDF usando la API de iLovePDF con fallback automático
+    si se acaban los créditos.
+    """
+    global current_api_index
+    
+    max_retries = len(ILOVEPDF_APIS)
+    
+    for attempt in range(max_retries):
+        api_config = ILOVEPDF_APIS[current_api_index]
+        
+        # Si no hay credenciales configuradas, saltar esta API
+        if not api_config['public_key'] or not api_config['secret_key']:
+            current_api_index = (current_api_index + 1) % len(ILOVEPDF_APIS)
+            continue
+        
+        try:
+            # Paso 1: Autenticarse y obtener token
+            auth_url = 'https://api.ilovepdf.com/v1/auth'
+            auth_response = requests.post(auth_url, json={
+                'public_key': api_config['public_key']
+            })
+            
+            # Verificar respuesta de autenticación
+            if auth_response.status_code != 200:
+                error_text = auth_response.text.lower()
+                error_json = {}
+                try:
+                    error_json = auth_response.json()
+                except:
+                    pass
+                
+                # Detectar errores de créditos
+                if any(ind in error_text for ind in ['credits', 'quota', 'limit', 'exceeded', 'insufficient', 'balance']):
+                    raise Exception(f"CREDITS_EXHAUSTED: {auth_response.text}")
+                
+                raise Exception(f"Error de autenticación ({auth_response.status_code}): {auth_response.text}")
+            
+            auth_data = auth_response.json()
+            token = auth_data.get('token')
+            
+            if not token:
+                raise Exception("No se recibió token de autenticación")
+            
+            # Paso 2: Iniciar tarea de conversión
+            start_url = 'https://api.ilovepdf.com/v1/start/officepdf'
+            headers = {'Authorization': f'Bearer {token}'}
+            start_response = requests.get(start_url, headers=headers)
+            
+            if start_response.status_code != 200:
+                error_text = start_response.text.lower()
+                if any(ind in error_text for ind in ['credits', 'quota', 'limit', 'exceeded', 'insufficient', 'balance']):
+                    raise Exception(f"CREDITS_EXHAUSTED: {start_response.text}")
+                raise Exception(f"Error al iniciar tarea ({start_response.status_code}): {start_response.text}")
+            
+            task_data = start_response.json()
+            server = task_data.get('server')
+            task = task_data.get('task')
+            
+            if not server or not task:
+                raise Exception("No se recibieron datos de servidor o tarea")
+            
+            # Paso 3: Subir archivo Word
+            upload_url = f'https://{server}/v1/upload'
+            files = {'file': (filename, word_file_bytes, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            upload_response = requests.post(upload_url, files=files, headers=headers)
+            
+            if upload_response.status_code != 200:
+                error_text = upload_response.text.lower()
+                if any(ind in error_text for ind in ['credits', 'quota', 'limit', 'exceeded', 'insufficient', 'balance']):
+                    raise Exception(f"CREDITS_EXHAUSTED: {upload_response.text}")
+                raise Exception(f"Error al subir archivo ({upload_response.status_code}): {upload_response.text}")
+            
+            upload_data = upload_response.json()
+            server_filename = upload_data.get('server_filename')
+            
+            if not server_filename:
+                raise Exception("No se recibió nombre de archivo del servidor")
+            
+            # Paso 4: Procesar conversión
+            process_url = f'https://{server}/v1/process'
+            process_data = {
+                'task': task,
+                'tool': 'officepdf',
+                'files': [{'server_filename': server_filename, 'filename': filename}]
+            }
+            process_response = requests.post(process_url, json=process_data, headers=headers)
+            
+            if process_response.status_code != 200:
+                error_text = process_response.text.lower()
+                if any(ind in error_text for ind in ['credits', 'quota', 'limit', 'exceeded', 'insufficient', 'balance']):
+                    raise Exception(f"CREDITS_EXHAUSTED: {process_response.text}")
+                raise Exception(f"Error al procesar ({process_response.status_code}): {process_response.text}")
+            
+            # Esperar un momento para que el procesamiento termine
+            time.sleep(1)
+            
+            # Paso 5: Descargar PDF resultante
+            download_url = f'https://{server}/v1/download/{task}'
+            download_response = requests.get(download_url, headers=headers)
+            
+            if download_response.status_code != 200:
+                error_text = download_response.text.lower()
+                if any(ind in error_text for ind in ['credits', 'quota', 'limit', 'exceeded', 'insufficient', 'balance']):
+                    raise Exception(f"CREDITS_EXHAUSTED: {download_response.text}")
+                raise Exception(f"Error al descargar PDF ({download_response.status_code}): {download_response.text}")
+            
+            # Si llegamos aquí, la conversión fue exitosa
+            print(f"✅ Conversión exitosa usando API {api_config['name']}")
+            return download_response.content
+            
+        except Exception as e:
+            error_message = str(e)
+            is_credits_error = 'CREDITS_EXHAUSTED' in error_message or any(
+                ind in error_message.lower() for ind in ['credits', 'quota', 'limit', 'exceeded', 'insufficient', 'balance', '401', '403']
+            )
+            
+            if is_credits_error:
+                # Cambiar a la siguiente API
+                current_api_index = (current_api_index + 1) % len(ILOVEPDF_APIS)
+                print(f"⚠️ Créditos agotados en API {api_config['name']}. Cambiando a API de respaldo...")
+                
+                # Si no hay más APIs, lanzar error
+                if attempt == max_retries - 1:
+                    raise Exception(f"Todas las APIs de iLovePDF han agotado sus créditos. Último error: {error_message}")
+                
+                # Continuar con el siguiente intento
+                continue
+            else:
+                # Error diferente, relanzar
+                raise e
+    
+    raise Exception("No se pudo convertir el archivo después de intentar todas las APIs disponibles")
+
+@app.route('/convert-word-to-pdf', methods=['POST'])
+def convert_word_to_pdf():
+    """
+    Convierte un documento Word a PDF usando iLovePDF con fallback automático
+    """
+    try:
+        # Verificar si se envió un archivo
+        if 'file' not in request.files:
+            return jsonify({"error": "No se proporcionó ningún archivo"}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({"error": "Nombre de archivo vacío"}), 400
+        
+        # Leer el archivo
+        word_file_bytes = file.read()
+        
+        # Convertir a PDF
+        pdf_bytes = convert_word_to_pdf_with_ilovepdf(word_file_bytes, file.filename)
+        
+        # Preparar respuesta
+        output = io.BytesIO(pdf_bytes)
+        output.seek(0)
+        
+        # Nombre del archivo PDF
+        pdf_filename = file.filename.replace('.docx', '.pdf').replace('.doc', '.pdf')
+        if not pdf_filename.endswith('.pdf'):
+            pdf_filename += '.pdf'
+        
+        return send_file(
+            output,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=pdf_filename
+        )
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 @app.route('/generate-word', methods=['POST'])
 def generate_word():
