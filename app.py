@@ -100,7 +100,8 @@ def root():
         "message": "API de Generación de Hojas de Vida funcionando",
         "endpoints": {
             "/health": "GET - Verificar estado del servidor",
-            "/generate-word": "POST - Generar documento Word",
+            "/generate-word": "POST - Generar documento Word (Hoja de Vida)",
+            "/generate-cuenta-cobro": "POST - Generar cuenta de cobro desde template",
             "/convert-word-to-pdf": "POST - Convertir Word a PDF usando iLovePDF"
         }
     })
@@ -688,6 +689,207 @@ def generate_word():
         # Nombre del archivo
         nombre_archivo = nombre.replace(' ', '_') if nombre else 'Hoja_de_Vida'
         filename = f"HV_{nombre_archivo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+def reemplazar_texto_en_documento(doc, reemplazos):
+    """
+    Reemplaza texto en un documento Word manteniendo el formato.
+    Busca en párrafos y tablas. Busca placeholders de forma case-insensitive.
+    """
+    def reemplazar_en_parrafo(paragraph, reemplazos_dict):
+        """Reemplaza texto en un párrafo manteniendo formato"""
+        texto_original = paragraph.text
+        texto_nuevo = texto_original
+        
+        # Buscar y reemplazar (case-insensitive)
+        for placeholder, valor in reemplazos_dict.items():
+            # Buscar placeholder de forma case-insensitive
+            import re
+            pattern = re.escape(placeholder)
+            matches = re.finditer(pattern, texto_original, re.IGNORECASE)
+            for match in reversed(list(matches)):  # Reversed para mantener índices
+                start, end = match.span()
+                texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
+        
+        if texto_nuevo != texto_original:
+            # Guardar formato del primer run si existe
+            formato_original = None
+            if paragraph.runs:
+                primer_run = paragraph.runs[0]
+                formato_original = {
+                    'font_name': primer_run.font.name,
+                    'font_size': primer_run.font.size,
+                    'bold': primer_run.bold,
+                    'italic': primer_run.italic,
+                    'color': primer_run.font.color.rgb if primer_run.font.color.rgb else None
+                }
+            
+            # Limpiar y reemplazar
+            paragraph.clear()
+            nuevo_run = paragraph.add_run(texto_nuevo)
+            
+            # Restaurar formato si existe
+            if formato_original:
+                if formato_original['font_name']:
+                    nuevo_run.font.name = formato_original['font_name']
+                if formato_original['font_size']:
+                    nuevo_run.font.size = formato_original['font_size']
+                if formato_original['color']:
+                    nuevo_run.font.color.rgb = formato_original['color']
+                nuevo_run.bold = formato_original['bold']
+                nuevo_run.italic = formato_original['italic']
+    
+    # Reemplazar en párrafos
+    for paragraph in doc.paragraphs:
+        reemplazar_en_parrafo(paragraph, reemplazos)
+    
+    # Reemplazar en tablas
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    reemplazar_en_parrafo(paragraph, reemplazos)
+
+def formatear_monto(monto):
+    """Formatea un monto como moneda colombiana"""
+    if not monto:
+        return ''
+    try:
+        monto_num = float(monto)
+        return f"${monto_num:,.0f}".replace(',', '.')
+    except:
+        return str(monto)
+
+@app.route('/generate-cuenta-cobro', methods=['POST'])
+def generate_cuenta_cobro():
+    """Genera una cuenta de cobro usando el template Word"""
+    try:
+        data = request.json
+        
+        # Obtener datos del formulario
+        nombre = data.get('nombre', '').strip()
+        cedula = data.get('cedula', '').strip()
+        mes = data.get('mes', '').strip()
+        año = data.get('año', '').strip()
+        sueldo_fijo = data.get('sueldoFijo', '').strip()
+        bono_seguridad = data.get('bonoSeguridad', '').strip()
+        turnos_descansos = data.get('turnosDescansos', '0').strip()
+        paciente = data.get('paciente', '').strip()
+        cuenta_bancaria = data.get('cuentaBancaria', '').strip()
+        
+        # Calcular adicionales (turnos * 70000)
+        turnos_num = int(turnos_descansos) if turnos_descansos.isdigit() else 0
+        valor_por_turno = 70000
+        adicionales_valor = turnos_num * valor_por_turno
+        
+        # Calcular total
+        total = 0
+        try:
+            if sueldo_fijo:
+                total += float(sueldo_fijo.replace('.', '').replace(',', '.'))
+            if bono_seguridad:
+                total += float(bono_seguridad.replace('.', '').replace(',', '.'))
+            if turnos_num > 0:
+                total += adicionales_valor
+        except:
+            pass
+        
+        # Formatear fecha (mes en texto)
+        fecha_texto = ''
+        if mes and año:
+            mes_num = int(mes) if mes.isdigit() else 0
+            if 1 <= mes_num <= 12:
+                fecha_texto = f"{MESES[mes_num].upper()} DE {año}"
+        
+        # Cargar template
+        template_path = os.path.join(os.path.dirname(__file__), 'templates', 'cobro_ 2026.docx')
+        if not os.path.exists(template_path):
+            return jsonify({"error": f"Template no encontrado en: {template_path}"}), 404
+        
+        doc = Document(template_path)
+        
+        # Preparar reemplazos usando los placeholders exactos del template
+        reemplazos = {}
+        
+        # Name1 - Nombre
+        reemplazos['Name1'] = nombre.upper()
+        
+        # banco1 - Cuenta bancaria
+        reemplazos['banco1'] = cuenta_bancaria
+        
+        # Cedu1 - Cédula
+        reemplazos['Cedu1'] = cedula
+        
+        # mes1 - Mes y año
+        reemplazos['mes1'] = fecha_texto
+        
+        # valor1 - Total
+        reemplazos['valor1'] = formatear_monto(total)
+        
+        # paciente1 - Nombre del paciente (si existe)
+        if paciente:
+            reemplazos['paciente1'] = paciente.upper()
+        else:
+            reemplazos['paciente1'] = ''  # Dejar vacío si no hay paciente
+        
+        # Adicionales - Solo si hay turnos de descansos
+        if turnos_num > 0:
+            # Buscar y reemplazar la sección de adicionales
+            # Formato: "ADICIONALES | X TURNOS | $ YYY.YYY"
+            adicionales_texto_turnos = f"{turnos_num} TURNOS"
+            adicionales_texto_valor = formatear_monto(adicionales_valor)
+            
+            # Buscar patrones comunes en el documento
+            reemplazos['4 TURNOS'] = adicionales_texto_turnos
+            reemplazos['240.000'] = adicionales_texto_valor
+            reemplazos['$ 240.000'] = f"$ {adicionales_texto_valor}"
+        else:
+            # Si no hay turnos, eliminar la fila de adicionales
+            # Esto se manejará removiendo el texto o dejándolo vacío
+            reemplazos['ADICIONALES'] = ''
+            reemplazos['4 TURNOS'] = ''
+            reemplazos['240.000'] = ''
+            reemplazos['$ 240.000'] = ''
+        
+        # Reemplazar texto en el documento
+        reemplazar_texto_en_documento(doc, reemplazos)
+        
+        # Si no hay turnos de descansos, intentar eliminar la fila de adicionales de la tabla
+        if turnos_num == 0:
+            # Buscar tablas y eliminar filas que contengan "ADICIONALES"
+            for table in doc.tables:
+                rows_to_remove = []
+                for i, row in enumerate(table.rows):
+                    row_text = ' '.join([cell.text for cell in row.cells])
+                    if 'ADICIONALES' in row_text.upper() and 'SUELDO FIJO' not in row_text.upper() and 'BONO' not in row_text.upper():
+                        rows_to_remove.append(i)
+                
+                # Eliminar filas en orden inverso para mantener índices
+                for i in reversed(rows_to_remove):
+                    # No podemos eliminar directamente, pero podemos limpiar el contenido
+                    for cell in table.rows[i].cells:
+                        for paragraph in cell.paragraphs:
+                            paragraph.clear()
+                            paragraph.add_run('')
+        
+        # Guardar en memoria
+        output = io.BytesIO()
+        doc.save(output)
+        output.seek(0)
+        
+        # Nombre del archivo
+        nombre_archivo = nombre.replace(' ', '_') if nombre else 'Cuenta_Cobro'
+        filename = f"Cuenta_Cobro_{nombre_archivo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
         
         return send_file(
             output,
