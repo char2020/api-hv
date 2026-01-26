@@ -782,10 +782,27 @@ def generate_cuenta_cobro():
         mes = data.get('mes', '').strip()
         año = data.get('año', '').strip()
         sueldo_fijo = data.get('sueldoFijo', '').strip()
+        dias_trabajados = data.get('diasTrabajados', '30').strip()
         bono_seguridad = data.get('bonoSeguridad', '').strip()
         turnos_descansos = data.get('turnosDescansos', '0').strip()
         paciente = data.get('paciente', '').strip()
         cuenta_bancaria = data.get('cuentaBancaria', '').strip()
+        
+        # Calcular sueldo proporcional según días trabajados
+        sueldo_proporcional = 0
+        dias_num = int(dias_trabajados) if dias_trabajados.isdigit() else 30
+        if dias_num > 30:
+            dias_num = 30
+        if dias_num < 1:
+            dias_num = 30
+        
+        try:
+            if sueldo_fijo:
+                sueldo_fijo_num = float(sueldo_fijo.replace('.', '').replace(',', '.'))
+                # Calcular: (sueldo fijo / 30) * días trabajados
+                sueldo_proporcional = (sueldo_fijo_num / 30) * dias_num
+        except:
+            pass
         
         # Calcular adicionales (turnos * 70000)
         turnos_num = int(turnos_descansos) if turnos_descansos.isdigit() else 0
@@ -795,10 +812,14 @@ def generate_cuenta_cobro():
         # Calcular total
         total = 0
         try:
-            if sueldo_fijo:
-                total += float(sueldo_fijo.replace('.', '').replace(',', '.'))
+            # Agregar sueldo proporcional
+            total += sueldo_proporcional
+            
+            # Agregar bono seguridad
             if bono_seguridad:
                 total += float(bono_seguridad.replace('.', '').replace(',', '.'))
+            
+            # Agregar adicionales si hay turnos de descansos
             if turnos_num > 0:
                 total += adicionales_valor
         except:
@@ -841,6 +862,12 @@ def generate_cuenta_cobro():
             reemplazos['paciente1'] = paciente.upper()
         else:
             reemplazos['paciente1'] = ''  # Dejar vacío si no hay paciente
+        
+        # Reemplazar sueldo fijo mensual con sueldo proporcional en la tabla
+        # El template tiene "SUELDO FIJO MENSUAL" y "MES COMPLETO" o el valor
+        reemplazos['MES COMPLETO'] = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
+        # También reemplazar el valor del sueldo en la tabla si existe
+        reemplazos['2.000.000'] = formatear_monto(sueldo_proporcional)
         
         # Adicionales - Solo si hay turnos de descansos
         if turnos_num > 0:
