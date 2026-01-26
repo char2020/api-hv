@@ -804,9 +804,9 @@ def generate_cuenta_cobro():
         except:
             pass
         
-        # Calcular adicionales (turnos * 70000)
+        # Calcular adicionales (turnos * 60000)
         turnos_num = int(turnos_descansos) if turnos_descansos.isdigit() else 0
-        valor_por_turno = 70000
+        valor_por_turno = 60000  # Cambiado a 60.000 por día
         adicionales_valor = turnos_num * valor_por_turno
         
         # Calcular total
