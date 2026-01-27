@@ -842,6 +842,7 @@ def generate_cuenta_cobro():
         # Obtener datos del formulario
         nombre = data.get('nombre', '').strip()
         cedula = data.get('cedula', '').strip()
+        telefono = data.get('phone', '').strip() or data.get('telefono', '').strip()
         mes = data.get('mes', '').strip()
         año = data.get('año', '').strip()
         sueldo_fijo = data.get('sueldoFijo', '').strip()
@@ -850,6 +851,7 @@ def generate_cuenta_cobro():
         turnos_descansos = data.get('turnosDescansos', '0').strip()
         paciente = data.get('paciente', '').strip()
         cuenta_bancaria = data.get('cuentaBancaria', '').strip()
+        banco = data.get('banco', '').strip() or 'Bancolombia'
         
         # Calcular sueldo proporcional según días trabajados
         sueldo_proporcional = 0
@@ -964,13 +966,27 @@ def generate_cuenta_cobro():
         reemplazos['[Cedu1]'] = cedula
         reemplazos['<<Cedu1>>'] = cedula
         
-        # Cuenta bancaria - múltiples variaciones
-        reemplazos['banco1'] = cuenta_bancaria
-        reemplazos['BANCO1'] = cuenta_bancaria
-        reemplazos['{banco1}'] = cuenta_bancaria
-        reemplazos['{{banco1}}'] = cuenta_bancaria
-        reemplazos['[banco1]'] = cuenta_bancaria
-        reemplazos['<<banco1>>'] = cuenta_bancaria
+        # Teléfono - múltiples variaciones (variable Num1 en el Word)
+        reemplazos['Num1'] = telefono
+        reemplazos['NUM1'] = telefono
+        reemplazos['num1'] = telefono
+        reemplazos['{Num1}'] = telefono
+        reemplazos['{{Num1}}'] = telefono
+        reemplazos['[Num1]'] = telefono
+        reemplazos['<<Num1>>'] = telefono
+        
+        # Banco - múltiples variaciones (variable banco1 en el Word)
+        reemplazos['banco1'] = banco
+        reemplazos['BANCO1'] = banco
+        reemplazos['{banco1}'] = banco
+        reemplazos['{{banco1}}'] = banco
+        reemplazos['[banco1]'] = banco
+        reemplazos['<<banco1>>'] = banco
+        
+        # Cuenta bancaria - múltiples variaciones (para mantener compatibilidad)
+        reemplazos['cuenta1'] = cuenta_bancaria
+        reemplazos['CUENTA1'] = cuenta_bancaria
+        reemplazos['{cuenta1}'] = cuenta_bancaria
         
         # Mes y año - múltiples variaciones
         reemplazos['mes1'] = fecha_texto
