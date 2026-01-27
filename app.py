@@ -854,16 +854,33 @@ def generate_cuenta_cobro():
         # Calcular sueldo proporcional según días trabajados
         sueldo_proporcional = 0
         dias_num = int(dias_trabajados) if dias_trabajados.isdigit() else 30
-        if dias_num > 30:
-            dias_num = 30
         if dias_num < 1:
             dias_num = 30
+        
+        # Obtener el número de días del mes seleccionado
+        try:
+            mes_num = int(mes) if mes.isdigit() else 0
+            año_num = int(año) if año.isdigit() else datetime.now().year
+            if 1 <= mes_num <= 12:
+                # Obtener el último día del mes (días del mes)
+                from calendar import monthrange
+                dias_del_mes = monthrange(año_num, mes_num)[1]  # monthrange devuelve (día de la semana, días del mes)
+            else:
+                dias_del_mes = 30  # Valor por defecto si el mes no es válido
+        except:
+            dias_del_mes = 30  # Valor por defecto en caso de error
+        
+        # Limitar días trabajados al máximo de días del mes
+        if dias_num > dias_del_mes:
+            dias_num = dias_del_mes
         
         try:
             if sueldo_fijo:
                 sueldo_fijo_num = float(sueldo_fijo.replace('.', '').replace(',', '.'))
-                # Calcular: (sueldo fijo / 30) * días trabajados
-                sueldo_proporcional = (sueldo_fijo_num / 30) * dias_num
+                # Calcular: (sueldo fijo / días del mes) * días trabajados
+                sueldo_proporcional = (sueldo_fijo_num / dias_del_mes) * dias_num
+                # Redondear a número entero
+                sueldo_proporcional = round(sueldo_proporcional)
         except:
             pass
         
