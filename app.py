@@ -1117,9 +1117,13 @@ def generate_cuenta_cobro():
         import re
         for paragraph in doc.paragraphs:
             texto = paragraph.text
-            # Limpiar duplicaciones de año
+            # Limpiar duplicaciones de año - múltiples patrones
             texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
             texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
+            texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)  # DE 2026 DEL 2026 -> DE 2026
+            texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)  # DEL 2026 DE 2026 -> DEL 2026
+            # Limpiar patrones como "DE ENERO DE 2026 DEL 2026"
+            texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
             # Limpiar múltiples símbolos $ seguidos
             texto = re.sub(r'\$\$+', '$', texto)
             texto = re.sub(r'\$ \$+', '$', texto)
@@ -1158,9 +1162,13 @@ def generate_cuenta_cobro():
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
                         texto = paragraph.text
-                        # Limpiar duplicaciones
+                        # Limpiar duplicaciones de año - múltiples patrones
                         texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
                         texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
+                        texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)  # DE 2026 DEL 2026 -> DE 2026
+                        texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)  # DEL 2026 DE 2026 -> DEL 2026
+                        # Limpiar patrones como "DE ENERO DE 2026 DEL 2026"
+                        texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
                         texto = re.sub(r'\$\$+', '$', texto)
                         texto = re.sub(r'\$ \$+', '$', texto)
                         texto = re.sub(r'  +', ' ', texto)
