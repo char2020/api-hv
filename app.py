@@ -705,33 +705,49 @@ def reemplazar_texto_en_documento(doc, reemplazos):
     """
     Reemplaza texto en un documento Word manteniendo el formato.
     Busca en párrafos y tablas. Busca placeholders de forma case-insensitive.
+    Mejora: Busca en todos los runs de texto para encontrar variables divididas.
     """
+    import re
+    
     def reemplazar_en_parrafo(paragraph, reemplazos_dict):
         """Reemplaza texto en un párrafo manteniendo formato"""
+        # Obtener todo el texto del párrafo
         texto_original = paragraph.text
+        if not texto_original:
+            return
+        
         texto_nuevo = texto_original
+        cambios_realizados = False
         
-        # Buscar y reemplazar (case-insensitive)
-        for placeholder, valor in reemplazos_dict.items():
+        # Buscar y reemplazar (case-insensitive) - ordenar por longitud descendente para evitar reemplazos parciales
+        sorted_reemplazos = sorted(reemplazos_dict.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for placeholder, valor in sorted_reemplazos:
+            if not placeholder:  # Saltar placeholders vacíos
+                continue
+            
             # Buscar placeholder de forma case-insensitive
-            import re
             pattern = re.escape(placeholder)
-            matches = re.finditer(pattern, texto_original, re.IGNORECASE)
-            for match in reversed(list(matches)):  # Reversed para mantener índices
-                start, end = match.span()
-                texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
+            matches = list(re.finditer(pattern, texto_nuevo, re.IGNORECASE))
+            
+            if matches:
+                cambios_realizados = True
+                # Reemplazar desde el final hacia el inicio para mantener índices
+                for match in reversed(matches):
+                    start, end = match.span()
+                    texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
         
-        if texto_nuevo != texto_original:
+        if cambios_realizados and texto_nuevo != texto_original:
             # Guardar formato del primer run si existe
             formato_original = None
             if paragraph.runs:
                 primer_run = paragraph.runs[0]
                 formato_original = {
-                    'font_name': primer_run.font.name,
-                    'font_size': primer_run.font.size,
-                    'bold': primer_run.bold,
-                    'italic': primer_run.italic,
-                    'color': primer_run.font.color.rgb if primer_run.font.color.rgb else None
+                    'font_name': primer_run.font.name if primer_run.font.name else None,
+                    'font_size': primer_run.font.size if primer_run.font.size else None,
+                    'bold': primer_run.bold if primer_run.bold is not None else False,
+                    'italic': primer_run.italic if primer_run.italic is not None else False,
+                    'color': primer_run.font.color.rgb if primer_run.font.color and primer_run.font.color.rgb else None
                 }
             
             # Limpiar y reemplazar
@@ -749,9 +765,49 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                 nuevo_run.bold = formato_original['bold']
                 nuevo_run.italic = formato_original['italic']
     
+    def reemplazar_en_runs(runs, reemplazos_dict):
+        """Reemplaza texto en runs individuales - útil para variables divididas en múltiples runs"""
+        texto_completo = ''.join([run.text for run in runs])
+        if not texto_completo:
+            return False
+        
+        texto_nuevo = texto_completo
+        cambios_realizados = False
+        
+        # Ordenar por longitud descendente
+        sorted_reemplazos = sorted(reemplazos_dict.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for placeholder, valor in sorted_reemplazos:
+            if not placeholder:
+                continue
+            
+            pattern = re.escape(placeholder)
+            matches = list(re.finditer(pattern, texto_nuevo, re.IGNORECASE))
+            
+            if matches:
+                cambios_realizados = True
+                for match in reversed(matches):
+                    start, end = match.span()
+                    texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
+        
+        if cambios_realizados and texto_nuevo != texto_completo:
+            # Limpiar todos los runs y crear uno nuevo con el texto reemplazado
+            for run in runs:
+                run.text = ''
+            if runs:
+                runs[0].text = texto_nuevo
+            return True
+        
+        return False
+    
     # Reemplazar en párrafos
     for paragraph in doc.paragraphs:
+        # Primero intentar reemplazo en el párrafo completo
         reemplazar_en_parrafo(paragraph, reemplazos)
+        
+        # También intentar reemplazo en runs individuales (por si la variable está dividida)
+        if paragraph.runs and len(paragraph.runs) > 1:
+            reemplazar_en_runs(paragraph.runs, reemplazos)
     
     # Reemplazar en tablas
     for table in doc.tables:
@@ -759,6 +815,9 @@ def reemplazar_texto_en_documento(doc, reemplazos):
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     reemplazar_en_parrafo(paragraph, reemplazos)
+                    # También en runs individuales
+                    if paragraph.runs and len(paragraph.runs) > 1:
+                        reemplazar_en_runs(paragraph.runs, reemplazos)
 
 def formatear_monto(monto):
     """Formatea un monto como moneda colombiana"""
@@ -840,56 +899,140 @@ def generate_cuenta_cobro():
         doc = Document(template_path)
         
         # Preparar reemplazos usando los placeholders exactos del template
+        # Buscar todas las variaciones posibles de las variables
         reemplazos = {}
         
-        # Name1 - Nombre
+        # Formatear bono seguridad
+        bono_seguridad_formateado = ''
+        if bono_seguridad:
+            try:
+                bono_num = float(bono_seguridad.replace('.', '').replace(',', '.'))
+                bono_seguridad_formateado = formatear_monto(bono_num)
+            except:
+                bono_seguridad_formateado = bono_seguridad
+        
+        # Formatear sueldo proporcional
+        sueldo_proporcional_formateado = formatear_monto(sueldo_proporcional)
+        
+        # Formatear adicionales
+        adicionales_formateado = formatear_monto(adicionales_valor) if turnos_num > 0 else ''
+        
+        # Formatear total
+        total_formateado = formatear_monto(total)
+        
+        # Nombre - múltiples variaciones
         reemplazos['Name1'] = nombre.upper()
+        reemplazos['NAME1'] = nombre.upper()
+        reemplazos['name1'] = nombre.upper()
+        reemplazos['{Name1}'] = nombre.upper()
+        reemplazos['{{Name1}}'] = nombre.upper()
+        reemplazos['[Name1]'] = nombre.upper()
+        reemplazos['<<Name1>>'] = nombre.upper()
         
-        # banco1 - Cuenta bancaria
-        reemplazos['banco1'] = cuenta_bancaria
-        
-        # Cedu1 - Cédula
+        # Cédula - múltiples variaciones
         reemplazos['Cedu1'] = cedula
+        reemplazos['CEDU1'] = cedula
+        reemplazos['cedu1'] = cedula
+        reemplazos['{Cedu1}'] = cedula
+        reemplazos['{{Cedu1}}'] = cedula
+        reemplazos['[Cedu1]'] = cedula
+        reemplazos['<<Cedu1>>'] = cedula
         
-        # mes1 - Mes y año
+        # Cuenta bancaria - múltiples variaciones
+        reemplazos['banco1'] = cuenta_bancaria
+        reemplazos['BANCO1'] = cuenta_bancaria
+        reemplazos['{banco1}'] = cuenta_bancaria
+        reemplazos['{{banco1}}'] = cuenta_bancaria
+        reemplazos['[banco1]'] = cuenta_bancaria
+        reemplazos['<<banco1>>'] = cuenta_bancaria
+        
+        # Mes y año - múltiples variaciones
         reemplazos['mes1'] = fecha_texto
+        reemplazos['MES1'] = fecha_texto
+        reemplazos['{mes1}'] = fecha_texto
+        reemplazos['{{mes1}}'] = fecha_texto
+        reemplazos['[mes1]'] = fecha_texto
+        reemplazos['<<mes1>>'] = fecha_texto
         
-        # valor1 - Total
-        reemplazos['valor1'] = formatear_monto(total)
+        # Total/Valor - múltiples variaciones
+        reemplazos['valor1'] = total_formateado
+        reemplazos['VALOR1'] = total_formateado
+        reemplazos['{valor1}'] = total_formateado
+        reemplazos['{{valor1}}'] = total_formateado
+        reemplazos['[valor1]'] = total_formateado
+        reemplazos['<<valor1>>'] = total_formateado
+        reemplazos['total1'] = total_formateado
+        reemplazos['TOTAL1'] = total_formateado
+        reemplazos['{total1}'] = total_formateado
         
-        # paciente1 - Nombre del paciente (si existe)
-        if paciente:
-            reemplazos['paciente1'] = paciente.upper()
-        else:
-            reemplazos['paciente1'] = ''  # Dejar vacío si no hay paciente
+        # Paciente - múltiples variaciones
+        paciente_valor = paciente.upper() if paciente else ''
+        reemplazos['paciente1'] = paciente_valor
+        reemplazos['PACIENTE1'] = paciente_valor
+        reemplazos['{paciente1}'] = paciente_valor
+        reemplazos['{{paciente1}}'] = paciente_valor
+        reemplazos['[paciente1]'] = paciente_valor
+        reemplazos['<<paciente1>>'] = paciente_valor
         
-        # Reemplazar sueldo fijo mensual con sueldo proporcional en la tabla
-        # El template tiene "SUELDO FIJO MENSUAL" y "MES COMPLETO" o el valor
-        reemplazos['MES COMPLETO'] = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
-        # También reemplazar el valor del sueldo en la tabla si existe
-        reemplazos['2.000.000'] = formatear_monto(sueldo_proporcional)
+        # Sueldo proporcional - múltiples variaciones y valores de ejemplo
+        reemplazos['2.000.000'] = sueldo_proporcional_formateado
+        reemplazos['$2.000.000'] = f"${sueldo_proporcional_formateado}"
+        reemplazos['$ 2.000.000'] = f"$ {sueldo_proporcional_formateado}"
+        reemplazos['sueldo1'] = sueldo_proporcional_formateado
+        reemplazos['SUELDO1'] = sueldo_proporcional_formateado
+        reemplazos['{sueldo1}'] = sueldo_proporcional_formateado
+        reemplazos['sueldoProporcional'] = sueldo_proporcional_formateado
+        reemplazos['SUELDO PROPORCIONAL'] = sueldo_proporcional_formateado
+        
+        # Días trabajados
+        dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
+        reemplazos['MES COMPLETO'] = dias_texto
+        reemplazos['30 DÍAS'] = dias_texto
+        reemplazos['30 DIAS'] = dias_texto
+        reemplazos['dias1'] = str(dias_num)
+        reemplazos['DIAS1'] = str(dias_num)
+        reemplazos['{dias1}'] = str(dias_num)
+        reemplazos['diasTrabajados'] = str(dias_num)
+        
+        # Bono seguridad - múltiples variaciones
+        if bono_seguridad_formateado:
+            reemplazos['bono1'] = bono_seguridad_formateado
+            reemplazos['BONO1'] = bono_seguridad_formateado
+            reemplazos['{bono1}'] = bono_seguridad_formateado
+            reemplazos['bonoSeguridad'] = bono_seguridad_formateado
+            reemplazos['BONO SEGURIDAD'] = bono_seguridad_formateado
+            reemplazos['$200.000'] = f"${bono_seguridad_formateado}"  # Valor de ejemplo común
         
         # Adicionales - Solo si hay turnos de descansos
         if turnos_num > 0:
-            # Buscar y reemplazar la sección de adicionales
-            # Formato: "ADICIONALES | X TURNOS | $ YYY.YYY"
             adicionales_texto_turnos = f"{turnos_num} TURNOS"
-            adicionales_texto_valor = formatear_monto(adicionales_valor)
-            
-            # Buscar patrones comunes en el documento
             reemplazos['4 TURNOS'] = adicionales_texto_turnos
-            reemplazos['240.000'] = adicionales_texto_valor
-            reemplazos['$ 240.000'] = f"$ {adicionales_texto_valor}"
+            reemplazos['TURNOS'] = adicionales_texto_turnos
+            reemplazos['{turnos}'] = adicionales_texto_turnos
+            reemplazos['240.000'] = adicionales_formateado
+            reemplazos['$240.000'] = f"${adicionales_formateado}"
+            reemplazos['$ 240.000'] = f"$ {adicionales_formateado}"
+            reemplazos['adicionales1'] = adicionales_formateado
+            reemplazos['ADICIONALES1'] = adicionales_formateado
+            reemplazos['{adicionales1}'] = adicionales_formateado
+            reemplazos['ADICIONALES'] = adicionales_formateado
         else:
-            # Si no hay turnos, eliminar la fila de adicionales
-            # Esto se manejará removiendo el texto o dejándolo vacío
-            reemplazos['ADICIONALES'] = ''
+            # Si no hay turnos, dejar vacío
             reemplazos['4 TURNOS'] = ''
             reemplazos['240.000'] = ''
+            reemplazos['$240.000'] = ''
             reemplazos['$ 240.000'] = ''
+            reemplazos['ADICIONALES'] = ''
+        
+        # Log de reemplazos para debug
+        print(f"🔍 Reemplazos a realizar: {len(reemplazos)} variables")
+        for key, value in sorted(reemplazos.items()):
+            if value:  # Solo mostrar los que tienen valor
+                print(f"  - {key} -> {value}")
         
         # Reemplazar texto en el documento
         reemplazar_texto_en_documento(doc, reemplazos)
+        print("✅ Reemplazos completados en el documento")
         
         # Si no hay turnos de descansos, intentar eliminar la fila de adicionales de la tabla
         if turnos_num == 0:
