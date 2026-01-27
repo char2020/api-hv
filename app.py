@@ -1096,11 +1096,16 @@ def generate_cuenta_cobro():
             reemplazos['ADICIONALES'] = ''
         
         # Limpiar duplicaciones de texto comunes
-        # Duplicaciones de año
+        # Duplicaciones de año - múltiples variaciones
         reemplazos['DE 2026 DE 2026'] = f'DE {año}'
         reemplazos['DEL 2026 DEL 2026'] = f'DEL {año}'
         reemplazos['DE ' + año + ' DE ' + año] = f'DE {año}'
         reemplazos['DEL ' + año + ' DEL ' + año] = f'DEL {año}'
+        # Corregir patrón específico: DE 2026 DEL 2026
+        reemplazos['DE 2026 DEL 2026'] = f'DE {año}'
+        reemplazos['DEL 2026 DE 2026'] = f'DEL {año}'
+        reemplazos['DE ' + año + ' DEL ' + año] = f'DE {año}'
+        reemplazos['DEL ' + año + ' DE ' + año] = f'DEL {año}'
         
         # Log de reemplazos para debug
         print(f"🔍 Reemplazos a realizar: {len(reemplazos)} variables")
