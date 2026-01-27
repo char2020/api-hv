@@ -878,8 +878,10 @@ def generate_cuenta_cobro():
             if sueldo_fijo:
                 sueldo_fijo_num = float(sueldo_fijo.replace('.', '').replace(',', '.'))
                 # Calcular: (sueldo fijo / días del mes) * días trabajados
-                sueldo_proporcional = (sueldo_fijo_num / dias_del_mes) * dias_num
-                # Redondear a número entero
+                # Primero dividir, luego multiplicar, y finalmente redondear
+                valor_por_dia = sueldo_fijo_num / dias_del_mes
+                sueldo_proporcional = valor_por_dia * dias_num
+                # Redondear a número entero solo al final
                 sueldo_proporcional = round(sueldo_proporcional)
         except:
             pass
