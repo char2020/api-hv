@@ -819,13 +819,17 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                     if paragraph.runs and len(paragraph.runs) > 1:
                         reemplazar_en_runs(paragraph.runs, reemplazos)
 
-def formatear_monto(monto):
+def formatear_monto(monto, incluir_signo=True):
     """Formatea un monto como moneda colombiana"""
     if not monto:
         return ''
     try:
         monto_num = float(monto)
-        return f"${monto_num:,.0f}".replace(',', '.')
+        # Formatear sin el símbolo $ para evitar duplicaciones en el template
+        monto_formateado = f"{monto_num:,.0f}".replace(',', '.')
+        if incluir_signo:
+            return f"${monto_formateado}"
+        return monto_formateado
     except:
         return str(monto)
 
@@ -902,23 +906,26 @@ def generate_cuenta_cobro():
         # Buscar todas las variaciones posibles de las variables
         reemplazos = {}
         
-        # Formatear bono seguridad
+        # Formatear bono seguridad (sin $ para evitar duplicaciones)
         bono_seguridad_formateado = ''
+        bono_seguridad_sin_signo = ''
         if bono_seguridad:
             try:
                 bono_num = float(bono_seguridad.replace('.', '').replace(',', '.'))
-                bono_seguridad_formateado = formatear_monto(bono_num)
+                bono_seguridad_formateado = formatear_monto(bono_num, incluir_signo=False)
+                bono_seguridad_sin_signo = bono_seguridad_formateado
             except:
                 bono_seguridad_formateado = bono_seguridad
+                bono_seguridad_sin_signo = bono_seguridad
         
-        # Formatear sueldo proporcional
-        sueldo_proporcional_formateado = formatear_monto(sueldo_proporcional)
+        # Formatear sueldo proporcional (sin $ para evitar duplicaciones)
+        sueldo_proporcional_formateado = formatear_monto(sueldo_proporcional, incluir_signo=False)
         
-        # Formatear adicionales
-        adicionales_formateado = formatear_monto(adicionales_valor) if turnos_num > 0 else ''
+        # Formatear adicionales (sin $ para evitar duplicaciones)
+        adicionales_formateado = formatear_monto(adicionales_valor, incluir_signo=False) if turnos_num > 0 else ''
         
-        # Formatear total
-        total_formateado = formatear_monto(total)
+        # Formatear total (sin $ para evitar duplicaciones)
+        total_formateado = formatear_monto(total, incluir_signo=False)
         
         # Nombre - múltiples variaciones
         reemplazos['Name1'] = nombre.upper()
@@ -954,7 +961,7 @@ def generate_cuenta_cobro():
         reemplazos['[mes1]'] = fecha_texto
         reemplazos['<<mes1>>'] = fecha_texto
         
-        # Total/Valor - múltiples variaciones
+        # Total/Valor - múltiples variaciones (sin $ adicional para evitar duplicaciones)
         reemplazos['valor1'] = total_formateado
         reemplazos['VALOR1'] = total_formateado
         reemplazos['{valor1}'] = total_formateado
@@ -964,6 +971,11 @@ def generate_cuenta_cobro():
         reemplazos['total1'] = total_formateado
         reemplazos['TOTAL1'] = total_formateado
         reemplazos['{total1}'] = total_formateado
+        # Limpiar duplicaciones de $ en el total
+        reemplazos['$ $2.440.000'] = total_formateado  # Limpiar múltiples $
+        reemplazos['$$2.440.000'] = total_formateado  # Limpiar múltiples $
+        reemplazos['$2.440.000'] = total_formateado  # Sin $ adicional
+        reemplazos['2.440.000'] = total_formateado
         
         # Paciente - múltiples variaciones
         paciente_valor = paciente.upper() if paciente else ''
@@ -975,9 +987,13 @@ def generate_cuenta_cobro():
         reemplazos['<<paciente1>>'] = paciente_valor
         
         # Sueldo proporcional - múltiples variaciones y valores de ejemplo
+        # Reemplazar valores con $ y sin $ para evitar duplicaciones
         reemplazos['2.000.000'] = sueldo_proporcional_formateado
-        reemplazos['$2.000.000'] = f"${sueldo_proporcional_formateado}"
-        reemplazos['$ 2.000.000'] = f"$ {sueldo_proporcional_formateado}"
+        reemplazos['$2.000.000'] = sueldo_proporcional_formateado  # Sin $ adicional
+        reemplazos['$$2.000.000'] = sueldo_proporcional_formateado  # Limpiar múltiples $
+        reemplazos['$$$2.000.000'] = sueldo_proporcional_formateado  # Limpiar múltiples $
+        reemplazos['$ 2.000.000'] = sueldo_proporcional_formateado  # Sin $ adicional
+        reemplazos['$ $ 2.000.000'] = sueldo_proporcional_formateado  # Limpiar múltiples $
         reemplazos['sueldo1'] = sueldo_proporcional_formateado
         reemplazos['SUELDO1'] = sueldo_proporcional_formateado
         reemplazos['{sueldo1}'] = sueldo_proporcional_formateado
@@ -994,35 +1010,62 @@ def generate_cuenta_cobro():
         reemplazos['{dias1}'] = str(dias_num)
         reemplazos['diasTrabajados'] = str(dias_num)
         
-        # Bono seguridad - múltiples variaciones
+        # Variable dia1 - día trabajado (del 1 al 30)
+        reemplazos['dia1'] = str(dias_num)
+        reemplazos['DIA1'] = str(dias_num)
+        reemplazos['{dia1}'] = str(dias_num)
+        reemplazos['{{dia1}}'] = str(dias_num)
+        reemplazos['[dia1]'] = str(dias_num)
+        reemplazos['<<dia1>>'] = str(dias_num)
+        
+        # Bono seguridad - múltiples variaciones (sin $ adicional para evitar duplicaciones)
         if bono_seguridad_formateado:
             reemplazos['bono1'] = bono_seguridad_formateado
             reemplazos['BONO1'] = bono_seguridad_formateado
             reemplazos['{bono1}'] = bono_seguridad_formateado
             reemplazos['bonoSeguridad'] = bono_seguridad_formateado
             reemplazos['BONO SEGURIDAD'] = bono_seguridad_formateado
-            reemplazos['$200.000'] = f"${bono_seguridad_formateado}"  # Valor de ejemplo común
+            reemplazos['200.000'] = bono_seguridad_formateado  # Sin $ adicional
+            reemplazos['$200.000'] = bono_seguridad_formateado  # Sin $ adicional
+            reemplazos['$ 200.000'] = bono_seguridad_formateado  # Sin $ adicional
+            reemplazos['$$200.000'] = bono_seguridad_formateado  # Limpiar múltiples $
         
         # Adicionales - Solo si hay turnos de descansos
         if turnos_num > 0:
             adicionales_texto_turnos = f"{turnos_num} TURNOS"
+            # Limpiar duplicaciones de "4 TURNOS" -> solo el número
+            reemplazos['4 4 TURNOS'] = adicionales_texto_turnos  # Limpiar duplicación
             reemplazos['4 TURNOS'] = adicionales_texto_turnos
             reemplazos['TURNOS'] = adicionales_texto_turnos
             reemplazos['{turnos}'] = adicionales_texto_turnos
+            # Valores sin $ adicional para evitar duplicaciones
             reemplazos['240.000'] = adicionales_formateado
-            reemplazos['$240.000'] = f"${adicionales_formateado}"
-            reemplazos['$ 240.000'] = f"$ {adicionales_formateado}"
+            reemplazos['$240.000'] = adicionales_formateado  # Sin $ adicional
+            reemplazos['$$240.000'] = adicionales_formateado  # Limpiar múltiples $
+            reemplazos['$$$240.000'] = adicionales_formateado  # Limpiar múltiples $
+            reemplazos['$ 240.000'] = adicionales_formateado  # Sin $ adicional
+            reemplazos['$ $ 240.000'] = adicionales_formateado  # Limpiar múltiples $
             reemplazos['adicionales1'] = adicionales_formateado
             reemplazos['ADICIONALES1'] = adicionales_formateado
             reemplazos['{adicionales1}'] = adicionales_formateado
             reemplazos['ADICIONALES'] = adicionales_formateado
         else:
             # Si no hay turnos, dejar vacío
+            reemplazos['4 4 TURNOS'] = ''  # Limpiar duplicación
             reemplazos['4 TURNOS'] = ''
             reemplazos['240.000'] = ''
             reemplazos['$240.000'] = ''
+            reemplazos['$$240.000'] = ''
+            reemplazos['$$$240.000'] = ''
             reemplazos['$ 240.000'] = ''
             reemplazos['ADICIONALES'] = ''
+        
+        # Limpiar duplicaciones de texto comunes
+        # Duplicaciones de año
+        reemplazos['DE 2026 DE 2026'] = f'DE {año}'
+        reemplazos['DEL 2026 DEL 2026'] = f'DEL {año}'
+        reemplazos['DE ' + año + ' DE ' + año] = f'DE {año}'
+        reemplazos['DEL ' + año + ' DEL ' + año] = f'DEL {año}'
         
         # Log de reemplazos para debug
         print(f"🔍 Reemplazos a realizar: {len(reemplazos)} variables")
@@ -1033,6 +1076,86 @@ def generate_cuenta_cobro():
         # Reemplazar texto en el documento
         reemplazar_texto_en_documento(doc, reemplazos)
         print("✅ Reemplazos completados en el documento")
+        
+        # Limpiar duplicaciones después del reemplazo
+        # Buscar y limpiar patrones comunes de duplicación
+        import re
+        for paragraph in doc.paragraphs:
+            texto = paragraph.text
+            # Limpiar duplicaciones de año
+            texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
+            texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
+            # Limpiar múltiples símbolos $ seguidos
+            texto = re.sub(r'\$\$+', '$', texto)
+            texto = re.sub(r'\$ \$+', '$', texto)
+            # Limpiar espacios múltiples
+            texto = re.sub(r'  +', ' ', texto)
+            
+            if texto != paragraph.text:
+                # Guardar formato
+                formato_original = None
+                if paragraph.runs:
+                    primer_run = paragraph.runs[0]
+                    formato_original = {
+                        'font_name': primer_run.font.name if primer_run.font.name else None,
+                        'font_size': primer_run.font.size if primer_run.font.size else None,
+                        'bold': primer_run.bold if primer_run.bold is not None else False,
+                        'italic': primer_run.italic if primer_run.italic is not None else False,
+                        'color': primer_run.font.color.rgb if primer_run.font.color and primer_run.font.color.rgb else None
+                    }
+                
+                paragraph.clear()
+                nuevo_run = paragraph.add_run(texto)
+                
+                if formato_original:
+                    if formato_original['font_name']:
+                        nuevo_run.font.name = formato_original['font_name']
+                    if formato_original['font_size']:
+                        nuevo_run.font.size = formato_original['font_size']
+                    if formato_original['color']:
+                        nuevo_run.font.color.rgb = formato_original['color']
+                    nuevo_run.bold = formato_original['bold']
+                    nuevo_run.italic = formato_original['italic']
+        
+        # También limpiar en tablas
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        texto = paragraph.text
+                        # Limpiar duplicaciones
+                        texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
+                        texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
+                        texto = re.sub(r'\$\$+', '$', texto)
+                        texto = re.sub(r'\$ \$+', '$', texto)
+                        texto = re.sub(r'  +', ' ', texto)
+                        
+                        if texto != paragraph.text:
+                            formato_original = None
+                            if paragraph.runs:
+                                primer_run = paragraph.runs[0]
+                                formato_original = {
+                                    'font_name': primer_run.font.name if primer_run.font.name else None,
+                                    'font_size': primer_run.font.size if primer_run.font.size else None,
+                                    'bold': primer_run.bold if primer_run.bold is not None else False,
+                                    'italic': primer_run.italic if primer_run.italic is not None else False,
+                                    'color': primer_run.font.color.rgb if primer_run.font.color and primer_run.font.color.rgb else None
+                                }
+                            
+                            paragraph.clear()
+                            nuevo_run = paragraph.add_run(texto)
+                            
+                            if formato_original:
+                                if formato_original['font_name']:
+                                    nuevo_run.font.name = formato_original['font_name']
+                                if formato_original['font_size']:
+                                    nuevo_run.font.size = formato_original['font_size']
+                                if formato_original['color']:
+                                    nuevo_run.font.color.rgb = formato_original['color']
+                                nuevo_run.bold = formato_original['bold']
+                                nuevo_run.italic = formato_original['italic']
+        
+        print("✅ Limpieza de duplicaciones completada")
         
         # Si no hay turnos de descansos, intentar eliminar la fila de adicionales de la tabla
         if turnos_num == 0:
