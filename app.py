@@ -1054,16 +1054,16 @@ def generate_cuenta_cobro():
         reemplazos['<<dia1>>'] = str(dias_num)
         
         # Bono seguridad - múltiples variaciones (sin $ adicional para evitar duplicaciones)
+        # Solo reemplazar variables específicas, NO valores fijos del template como "200.000" o "BONO SEGURIDAD"
         if bono_seguridad_formateado:
             reemplazos['bono1'] = bono_seguridad_formateado
             reemplazos['BONO1'] = bono_seguridad_formateado
             reemplazos['{bono1}'] = bono_seguridad_formateado
+            reemplazos['{{bono1}}'] = bono_seguridad_formateado
+            reemplazos['[bono1]'] = bono_seguridad_formateado
+            reemplazos['<<bono1>>'] = bono_seguridad_formateado
             reemplazos['bonoSeguridad'] = bono_seguridad_formateado
-            reemplazos['BONO SEGURIDAD'] = bono_seguridad_formateado
-            reemplazos['200.000'] = bono_seguridad_formateado  # Sin $ adicional
-            reemplazos['$200.000'] = bono_seguridad_formateado  # Sin $ adicional
-            reemplazos['$ 200.000'] = bono_seguridad_formateado  # Sin $ adicional
-            reemplazos['$$200.000'] = bono_seguridad_formateado  # Limpiar múltiples $
+            # NO reemplazar "BONO SEGURIDAD" ni "200.000" - son valores fijos del template
         
         # Adicionales - Solo si hay turnos de descansos
         if turnos_num > 0:
