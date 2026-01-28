@@ -727,7 +727,13 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                 continue
             
             # Buscar placeholder de forma case-insensitive
-            pattern = re.escape(placeholder)
+            # Para dia1 y dia2, buscar sin word boundaries para capturar variaciones
+            if 'dia' in placeholder.lower() and len(placeholder) <= 5:
+                # Buscar dia1 o dia2 incluso si está en medio de texto (ej: "AL dia2")
+                pattern = re.escape(placeholder)
+            else:
+                pattern = re.escape(placeholder)
+            
             matches = list(re.finditer(pattern, texto_nuevo, re.IGNORECASE))
             
             if matches:
@@ -736,6 +742,9 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                 for match in reversed(matches):
                     start, end = match.span()
                     texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
+                    # Log para debug de dia1 y dia2
+                    if 'dia' in placeholder.lower():
+                        print(f"  ✅ Reemplazado '{placeholder}' por '{valor}' en: ...{texto_original[max(0, start-20):min(len(texto_original), start+20)]}...")
         
         if cambios_realizados and texto_nuevo != texto_original:
             # Guardar formato del primer run si existe
@@ -1096,21 +1105,33 @@ def generate_cuenta_cobro():
         dia_inicio = data.get('diaInicio', '1').strip()
         dia_fin = data.get('diaFin', str(dias_num)).strip()
         
-        # dia1 siempre es el día de inicio
+        # dia1 siempre es el día de inicio - múltiples variaciones para asegurar el reemplazo
         reemplazos['dia1'] = dia_inicio
         reemplazos['DIA1'] = dia_inicio
         reemplazos['{dia1}'] = dia_inicio
         reemplazos['{{dia1}}'] = dia_inicio
         reemplazos['[dia1]'] = dia_inicio
         reemplazos['<<dia1>>'] = dia_inicio
+        reemplazos[' dia1 '] = dia_inicio  # Con espacios
+        reemplazos[' DIA1 '] = dia_inicio  # Con espacios
+        reemplazos['dia1 '] = dia_inicio  # Con espacio al final
+        reemplazos[' dia1'] = dia_inicio  # Con espacio al inicio
+        reemplazos['diaInicio'] = dia_inicio
+        reemplazos['dia_inicio'] = dia_inicio
         
-        # dia2 siempre es el día final
+        # dia2 siempre es el día final - múltiples variaciones para asegurar el reemplazo
         reemplazos['dia2'] = dia_fin
         reemplazos['DIA2'] = dia_fin
         reemplazos['{dia2}'] = dia_fin
         reemplazos['{{dia2}}'] = dia_fin
         reemplazos['[dia2]'] = dia_fin
         reemplazos['<<dia2>>'] = dia_fin
+        reemplazos[' dia2 '] = dia_fin  # Con espacios
+        reemplazos[' DIA2 '] = dia_fin  # Con espacios
+        reemplazos['dia2 '] = dia_fin  # Con espacio al final
+        reemplazos[' dia2'] = dia_fin  # Con espacio al inicio
+        reemplazos['diaFin'] = dia_fin
+        reemplazos['dia_fin'] = dia_fin
         
         # Bono seguridad - múltiples variaciones (sin $ adicional para evitar duplicaciones)
         # Solo reemplazar variables específicas, NO valores fijos del template como "200.000" o "BONO SEGURIDAD"
@@ -1191,15 +1212,23 @@ def generate_cuenta_cobro():
         reemplazos['DE 2026 DE 2026'] = f'DE {año}'
         reemplazos['DEL 2026 DEL 2026'] = f'DEL {año}'
         
-        # Log de reemplazos para debug
+        # Log de reemplazos para debug - especialmente dia1 y dia2
         print(f"🔍 Reemplazos a realizar: {len(reemplazos)} variables")
+        print(f"📅 dia1 (día inicio): '{dia_inicio}'")
+        print(f"📅 dia2 (día fin): '{dia_fin}'")
         for key, value in sorted(reemplazos.items()):
-            if value:  # Solo mostrar los que tienen valor
+            if value and ('dia' in key.lower() or 'DIA' in key):  # Mostrar todos los relacionados con dia
                 print(f"  - {key} -> {value}")
         
         # Reemplazar texto en el documento
         reemplazar_texto_en_documento(doc, reemplazos)
         print("✅ Reemplazos completados en el documento")
+        
+        # Verificar si dia1 y dia2 fueron reemplazados correctamente
+        texto_completo = ' '.join([para.text for para in doc.paragraphs])
+        if 'dia1' in texto_completo.lower() or 'dia2' in texto_completo.lower():
+            print(f"⚠️ ADVERTENCIA: Todavía hay 'dia1' o 'dia2' sin reemplazar en el documento")
+            print(f"   Texto encontrado: {texto_completo[texto_completo.lower().find('dia'):texto_completo.lower().find('dia')+50]}")
         
         # Limpiar duplicaciones después del reemplazo
         # Buscar y limpiar patrones comunes de duplicación
