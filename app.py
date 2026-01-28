@@ -967,13 +967,19 @@ def generate_cuenta_cobro():
         reemplazos['<<Cedu1>>'] = cedula
         
         # Teléfono - múltiples variaciones (variable Num1 en el Word)
-        reemplazos['Num1'] = telefono
-        reemplazos['NUM1'] = telefono
-        reemplazos['num1'] = telefono
-        reemplazos['{Num1}'] = telefono
-        reemplazos['{{Num1}}'] = telefono
-        reemplazos['[Num1]'] = telefono
-        reemplazos['<<Num1>>'] = telefono
+        # Asegurar que siempre se reemplace, incluso si está vacío
+        telefono_valor = telefono if telefono else ''
+        reemplazos['Num1'] = telefono_valor
+        reemplazos['NUM1'] = telefono_valor
+        reemplazos['num1'] = telefono_valor
+        reemplazos['{Num1}'] = telefono_valor
+        reemplazos['{{Num1}}'] = telefono_valor
+        reemplazos['[Num1]'] = telefono_valor
+        reemplazos['<<Num1>>'] = telefono_valor
+        # También variaciones con espacios
+        reemplazos['Num 1'] = telefono_valor
+        reemplazos['NUM 1'] = telefono_valor
+        reemplazos['{Num 1}'] = telefono_valor
         
         # Banco - múltiples variaciones (variable banco1 en el Word)
         reemplazos['banco1'] = banco
@@ -1095,17 +1101,18 @@ def generate_cuenta_cobro():
             reemplazos['$ 240.000'] = ''
             reemplazos['ADICIONALES'] = ''
         
-        # Limpiar duplicaciones de texto comunes
-        # Duplicaciones de año - múltiples variaciones
-        reemplazos['DE 2026 DE 2026'] = f'DE {año}'
-        reemplazos['DEL 2026 DEL 2026'] = f'DEL {año}'
-        reemplazos['DE ' + año + ' DE ' + año] = f'DE {año}'
-        reemplazos['DEL ' + año + ' DEL ' + año] = f'DEL {año}'
-        # Corregir patrón específico: DE 2026 DEL 2026
-        reemplazos['DE 2026 DEL 2026'] = f'DE {año}'
-        reemplazos['DEL 2026 DE 2026'] = f'DEL {año}'
+        # Limpiar duplicaciones de texto comunes ANTES de reemplazar
+        # Duplicaciones de año - múltiples variaciones (ordenar por longitud descendente)
+        # Primero los más largos para evitar reemplazos parciales
         reemplazos['DE ' + año + ' DEL ' + año] = f'DE {año}'
         reemplazos['DEL ' + año + ' DE ' + año] = f'DEL {año}'
+        reemplazos['DE ' + año + ' DE ' + año] = f'DE {año}'
+        reemplazos['DEL ' + año + ' DEL ' + año] = f'DEL {año}'
+        # También valores hardcodeados comunes
+        reemplazos['DE 2026 DEL 2026'] = f'DE {año}'
+        reemplazos['DEL 2026 DE 2026'] = f'DEL {año}'
+        reemplazos['DE 2026 DE 2026'] = f'DE {año}'
+        reemplazos['DEL 2026 DEL 2026'] = f'DEL {año}'
         
         # Log de reemplazos para debug
         print(f"🔍 Reemplazos a realizar: {len(reemplazos)} variables")
@@ -1122,13 +1129,18 @@ def generate_cuenta_cobro():
         import re
         for paragraph in doc.paragraphs:
             texto = paragraph.text
-            # Limpiar duplicaciones de año - múltiples patrones
+            # Limpiar duplicaciones de año - múltiples patrones (aplicar varias veces para asegurar)
+            # Patrón 1: DE 2026 DE 2026 -> DE 2026
             texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
+            # Patrón 2: DEL 2026 DEL 2026 -> DEL 2026
             texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
-            texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)  # DE 2026 DEL 2026 -> DE 2026
-            texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)  # DEL 2026 DE 2026 -> DEL 2026
-            # Limpiar patrones como "DE ENERO DE 2026 DEL 2026"
+            # Patrón 3: DE 2026 DEL 2026 -> DE 2026 (el más común)
             texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
+            # Patrón 4: DEL 2026 DE 2026 -> DEL 2026
+            texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)
+            # Aplicar nuevamente para casos anidados
+            texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
+            texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)
             # Limpiar múltiples símbolos $ seguidos
             texto = re.sub(r'\$\$+', '$', texto)
             texto = re.sub(r'\$ \$+', '$', texto)
@@ -1167,13 +1179,18 @@ def generate_cuenta_cobro():
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
                         texto = paragraph.text
-                        # Limpiar duplicaciones de año - múltiples patrones
+                        # Limpiar duplicaciones de año - múltiples patrones (aplicar varias veces)
+                        # Patrón 1: DE 2026 DE 2026 -> DE 2026
                         texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
+                        # Patrón 2: DEL 2026 DEL 2026 -> DEL 2026
                         texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
-                        texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)  # DE 2026 DEL 2026 -> DE 2026
-                        texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)  # DEL 2026 DE 2026 -> DEL 2026
-                        # Limpiar patrones como "DE ENERO DE 2026 DEL 2026"
+                        # Patrón 3: DE 2026 DEL 2026 -> DE 2026 (el más común)
                         texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
+                        # Patrón 4: DEL 2026 DE 2026 -> DEL 2026
+                        texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)
+                        # Aplicar nuevamente para casos anidados
+                        texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
+                        texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)
                         texto = re.sub(r'\$\$+', '$', texto)
                         texto = re.sub(r'\$ \$+', '$', texto)
                         texto = re.sub(r'  +', ' ', texto)
