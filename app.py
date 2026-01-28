@@ -1160,8 +1160,12 @@ def generate_cuenta_cobro():
             # Limpiar duplicaciones de "4 TURNOS" -> solo el número
             reemplazos['4 4 TURNOS'] = adicionales_texto_turnos  # Limpiar duplicación
             reemplazos['4 TURNOS'] = adicionales_texto_turnos
-            reemplazos['TURNOS'] = adicionales_texto_turnos
+            # NO reemplazar "TURNOS" solo - esto afectaría el texto descriptivo "TURNOS DOMICILIARIOS"
+            # Solo reemplazar variaciones específicas con placeholders
             reemplazos['{turnos}'] = adicionales_texto_turnos
+            reemplazos['{{turnos}}'] = adicionales_texto_turnos
+            reemplazos['[turnos]'] = adicionales_texto_turnos
+            reemplazos['<<turnos>>'] = adicionales_texto_turnos
             # Valores sin $ adicional para evitar duplicaciones
             reemplazos['240.000'] = adicionales_formateado
             reemplazos['$240.000'] = adicionales_formateado  # Sin $ adicional
@@ -1176,7 +1180,7 @@ def generate_cuenta_cobro():
             # NO reemplazar "DESCANSOS" - es el texto de descripción que debe mantenerse
             # Solo reemplazar el valor monetario, no el texto descriptivo
         else:
-            # Si no hay turnos, dejar vacío los valores pero NO eliminar "DESCANSOS"
+            # Si no hay turnos, dejar vacío los valores pero NO eliminar "DESCANSOS" ni "TURNOS"
             reemplazos['4 4 TURNOS'] = ''  # Limpiar duplicación
             reemplazos['4 TURNOS'] = ''
             reemplazos['240.000'] = ''
@@ -1185,7 +1189,12 @@ def generate_cuenta_cobro():
             reemplazos['$$$240.000'] = ''
             reemplazos['$ 240.000'] = ''
             reemplazos['ADICIONALES'] = ''
-            # NO reemplazar "DESCANSOS" - debe mantenerse como texto descriptivo
+            # NO reemplazar "DESCANSOS" ni "TURNOS" - deben mantenerse como texto descriptivo
+            # Solo limpiar placeholders específicos
+            reemplazos['{turnos}'] = ''
+            reemplazos['{{turnos}}'] = ''
+            reemplazos['[turnos]'] = ''
+            reemplazos['<<turnos>>'] = ''
         
         # Auxilio de transporte
         if tiene_auxilio_transporte and auxilio_transporte:
