@@ -847,7 +847,20 @@ def generate_cuenta_cobro():
         mes = data.get('mes', '').strip()
         año = data.get('año', '').strip()
         sueldo_fijo = data.get('sueldoFijo', '').strip()
+        mes_completo = data.get('mesCompleto', True)
+        dia_inicio = data.get('diaInicio', '1').strip()
+        dia_fin = data.get('diaFin', '30').strip()
         dias_trabajados = data.get('diasTrabajados', '30').strip()
+        
+        # Si no es mes completo, calcular días trabajados desde día inicio hasta día fin
+        if not mes_completo:
+            try:
+                dia_inicio_num = int(dia_inicio) if dia_inicio.isdigit() else 1
+                dia_fin_num = int(dia_fin) if dia_fin.isdigit() else 30
+                if dia_fin_num >= dia_inicio_num:
+                    dias_trabajados = str((dia_fin_num - dia_inicio_num) + 1)
+            except:
+                pass
         bono_seguridad = data.get('bonoSeguridad', '').strip()
         turnos_descansos = data.get('turnosDescansos', '0').strip()
         paciente = data.get('paciente', '').strip()
