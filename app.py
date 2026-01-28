@@ -842,7 +842,8 @@ def generate_cuenta_cobro():
         # Obtener datos del formulario
         nombre = data.get('nombre', '').strip()
         cedula = data.get('cedula', '').strip()
-        telefono = data.get('phone', '').strip() or data.get('telefono', '').strip()
+        telefono = data.get('phone', '').strip() or data.get('telefono', '').strip() or data.get('phoneNumber', '').strip()
+        print(f"📞 Teléfono recibido: '{telefono}'")  # Debug
         mes = data.get('mes', '').strip()
         año = data.get('año', '').strip()
         sueldo_fijo = data.get('sueldoFijo', '').strip()
