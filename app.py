@@ -866,6 +866,9 @@ def generate_cuenta_cobro():
         paciente = data.get('paciente', '').strip()
         cuenta_bancaria = data.get('cuentaBancaria', '').strip()
         banco = data.get('banco', '').strip() or 'Bancolombia'
+        tipo_cuenta_cobro = data.get('tipoCuentaCobro', '12h').strip()  # '12h' o '8h'
+        tiene_auxilio_transporte = data.get('tieneAuxilioTransporte', False)
+        auxilio_transporte = data.get('auxilioTransporte', '').strip()
         
         # Calcular sueldo proporcional según días trabajados
         sueldo_proporcional = 0
@@ -920,6 +923,14 @@ def generate_cuenta_cobro():
             # Agregar adicionales si hay turnos de descansos
             if turnos_num > 0:
                 total += adicionales_valor
+            
+            # Agregar auxilio de transporte si está activado
+            if tiene_auxilio_transporte and auxilio_transporte:
+                try:
+                    auxilio_num = float(auxilio_transporte.replace('.', '').replace(',', '.'))
+                    total += auxilio_num
+                except:
+                    pass
         except:
             pass
         
@@ -931,7 +942,11 @@ def generate_cuenta_cobro():
                 fecha_texto = f"{MESES[mes_num].upper()} DE {año}"
         
         # Cargar template
-        template_path = os.path.join(os.path.dirname(__file__), 'templates', 'cobro_ 2026.docx')
+        # Seleccionar template según tipo de cuenta de cobro
+        if tipo_cuenta_cobro == '8h':
+            template_path = os.path.join(os.path.dirname(__file__), 'templates', 'cobro_8h.docx')
+        else:
+            template_path = os.path.join(os.path.dirname(__file__), 'templates', 'cobro_ 2026.docx')
         if not os.path.exists(template_path):
             return jsonify({"error": f"Template no encontrado en: {template_path}"}), 404
         
@@ -1076,13 +1091,31 @@ def generate_cuenta_cobro():
         reemplazos['{dias1}'] = str(dias_num)
         reemplazos['diasTrabajados'] = str(dias_num)
         
-        # Variable dia1 - día trabajado (del 1 al 30)
-        reemplazos['dia1'] = str(dias_num)
-        reemplazos['DIA1'] = str(dias_num)
-        reemplazos['{dia1}'] = str(dias_num)
-        reemplazos['{{dia1}}'] = str(dias_num)
-        reemplazos['[dia1]'] = str(dias_num)
-        reemplazos['<<dia1>>'] = str(dias_num)
+        # Variable dia1 y dia2 - días trabajados (para 8h usa dia1 y dia2, para 12h solo dia1)
+        if tipo_cuenta_cobro == '8h':
+            # Para 8 horas, usar día inicio y día fin
+            dia_inicio = data.get('diaInicio', '1').strip()
+            dia_fin = data.get('diaFin', str(dias_num)).strip()
+            reemplazos['dia1'] = dia_inicio
+            reemplazos['DIA1'] = dia_inicio
+            reemplazos['{dia1}'] = dia_inicio
+            reemplazos['{{dia1}}'] = dia_inicio
+            reemplazos['[dia1]'] = dia_inicio
+            reemplazos['<<dia1>>'] = dia_inicio
+            reemplazos['dia2'] = dia_fin
+            reemplazos['DIA2'] = dia_fin
+            reemplazos['{dia2}'] = dia_fin
+            reemplazos['{{dia2}}'] = dia_fin
+            reemplazos['[dia2]'] = dia_fin
+            reemplazos['<<dia2>>'] = dia_fin
+        else:
+            # Para 12 horas, usar solo dia1 con días trabajados
+            reemplazos['dia1'] = str(dias_num)
+            reemplazos['DIA1'] = str(dias_num)
+            reemplazos['{dia1}'] = str(dias_num)
+            reemplazos['{{dia1}}'] = str(dias_num)
+            reemplazos['[dia1]'] = str(dias_num)
+            reemplazos['<<dia1>>'] = str(dias_num)
         
         # Bono seguridad - múltiples variaciones (sin $ adicional para evitar duplicaciones)
         # Solo reemplazar variables específicas, NO valores fijos del template como "200.000" o "BONO SEGURIDAD"
@@ -1115,6 +1148,7 @@ def generate_cuenta_cobro():
             reemplazos['ADICIONALES1'] = adicionales_formateado
             reemplazos['{adicionales1}'] = adicionales_formateado
             reemplazos['ADICIONALES'] = adicionales_formateado
+            reemplazos['DESCANSOS'] = adicionales_formateado
         else:
             # Si no hay turnos, dejar vacío
             reemplazos['4 4 TURNOS'] = ''  # Limpiar duplicación
@@ -1125,6 +1159,28 @@ def generate_cuenta_cobro():
             reemplazos['$$$240.000'] = ''
             reemplazos['$ 240.000'] = ''
             reemplazos['ADICIONALES'] = ''
+            reemplazos['DESCANSOS'] = ''
+        
+        # Auxilio de transporte
+        if tiene_auxilio_transporte and auxilio_transporte:
+            try:
+                auxilio_num = float(auxilio_transporte.replace('.', '').replace(',', '.'))
+                auxilio_formateado = formatear_monto(auxilio_num, incluir_signo=False)
+                reemplazos['auxilioTransporte'] = auxilio_formateado
+                reemplazos['AUXILIO TRANSPORTE'] = auxilio_formateado
+                reemplazos['auxilio1'] = auxilio_formateado
+                reemplazos['AUXILIO1'] = auxilio_formateado
+                reemplazos['{auxilio1}'] = auxilio_formateado
+                reemplazos['{{auxilio1}}'] = auxilio_formateado
+                reemplazos['[auxilio1]'] = auxilio_formateado
+                reemplazos['<<auxilio1>>'] = auxilio_formateado
+            except:
+                pass
+        else:
+            reemplazos['auxilioTransporte'] = ''
+            reemplazos['AUXILIO TRANSPORTE'] = ''
+            reemplazos['auxilio1'] = ''
+            reemplazos['AUXILIO1'] = ''
         
         # Limpiar duplicaciones de texto comunes ANTES de reemplazar
         # Duplicaciones de año - múltiples variaciones (ordenar por longitud descendente)
