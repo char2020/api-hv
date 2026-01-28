@@ -1091,31 +1091,26 @@ def generate_cuenta_cobro():
         reemplazos['{dias1}'] = str(dias_num)
         reemplazos['diasTrabajados'] = str(dias_num)
         
-        # Variable dia1 y dia2 - días trabajados (para 8h usa dia1 y dia2, para 12h solo dia1)
-        if tipo_cuenta_cobro == '8h':
-            # Para 8 horas, usar día inicio y día fin
-            dia_inicio = data.get('diaInicio', '1').strip()
-            dia_fin = data.get('diaFin', str(dias_num)).strip()
-            reemplazos['dia1'] = dia_inicio
-            reemplazos['DIA1'] = dia_inicio
-            reemplazos['{dia1}'] = dia_inicio
-            reemplazos['{{dia1}}'] = dia_inicio
-            reemplazos['[dia1]'] = dia_inicio
-            reemplazos['<<dia1>>'] = dia_inicio
-            reemplazos['dia2'] = dia_fin
-            reemplazos['DIA2'] = dia_fin
-            reemplazos['{dia2}'] = dia_fin
-            reemplazos['{{dia2}}'] = dia_fin
-            reemplazos['[dia2]'] = dia_fin
-            reemplazos['<<dia2>>'] = dia_fin
-        else:
-            # Para 12 horas, usar solo dia1 con días trabajados
-            reemplazos['dia1'] = str(dias_num)
-            reemplazos['DIA1'] = str(dias_num)
-            reemplazos['{dia1}'] = str(dias_num)
-            reemplazos['{{dia1}}'] = str(dias_num)
-            reemplazos['[dia1]'] = str(dias_num)
-            reemplazos['<<dia1>>'] = str(dias_num)
+        # Variable dia1 y dia2 - dia1 es el día de inicio, dia2 es el día final
+        # Esto aplica para ambos tipos (12h y 8h)
+        dia_inicio = data.get('diaInicio', '1').strip()
+        dia_fin = data.get('diaFin', str(dias_num)).strip()
+        
+        # dia1 siempre es el día de inicio
+        reemplazos['dia1'] = dia_inicio
+        reemplazos['DIA1'] = dia_inicio
+        reemplazos['{dia1}'] = dia_inicio
+        reemplazos['{{dia1}}'] = dia_inicio
+        reemplazos['[dia1]'] = dia_inicio
+        reemplazos['<<dia1>>'] = dia_inicio
+        
+        # dia2 siempre es el día final
+        reemplazos['dia2'] = dia_fin
+        reemplazos['DIA2'] = dia_fin
+        reemplazos['{dia2}'] = dia_fin
+        reemplazos['{{dia2}}'] = dia_fin
+        reemplazos['[dia2]'] = dia_fin
+        reemplazos['<<dia2>>'] = dia_fin
         
         # Bono seguridad - múltiples variaciones (sin $ adicional para evitar duplicaciones)
         # Solo reemplazar variables específicas, NO valores fijos del template como "200.000" o "BONO SEGURIDAD"
