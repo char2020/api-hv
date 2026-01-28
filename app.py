@@ -1143,9 +1143,10 @@ def generate_cuenta_cobro():
             reemplazos['ADICIONALES1'] = adicionales_formateado
             reemplazos['{adicionales1}'] = adicionales_formateado
             reemplazos['ADICIONALES'] = adicionales_formateado
-            reemplazos['DESCANSOS'] = adicionales_formateado
+            # NO reemplazar "DESCANSOS" - es el texto de descripción que debe mantenerse
+            # Solo reemplazar el valor monetario, no el texto descriptivo
         else:
-            # Si no hay turnos, dejar vacío
+            # Si no hay turnos, dejar vacío los valores pero NO eliminar "DESCANSOS"
             reemplazos['4 4 TURNOS'] = ''  # Limpiar duplicación
             reemplazos['4 TURNOS'] = ''
             reemplazos['240.000'] = ''
@@ -1154,7 +1155,7 @@ def generate_cuenta_cobro():
             reemplazos['$$$240.000'] = ''
             reemplazos['$ 240.000'] = ''
             reemplazos['ADICIONALES'] = ''
-            reemplazos['DESCANSOS'] = ''
+            # NO reemplazar "DESCANSOS" - debe mantenerse como texto descriptivo
         
         # Auxilio de transporte
         if tiene_auxilio_transporte and auxilio_transporte:
@@ -1298,23 +1299,21 @@ def generate_cuenta_cobro():
         
         print("✅ Limpieza de duplicaciones completada")
         
-        # Si no hay turnos de descansos, intentar eliminar la fila de adicionales de la tabla
+        # Si no hay turnos de descansos, limpiar solo los valores pero mantener "DESCANSOS" como texto
         if turnos_num == 0:
-            # Buscar tablas y eliminar filas que contengan "ADICIONALES"
+            # Buscar tablas y limpiar solo los valores (columna VALOR) pero mantener "DESCANSOS" en la descripción
             for table in doc.tables:
-                rows_to_remove = []
-                for i, row in enumerate(table.rows):
+                for row in table.rows:
                     row_text = ' '.join([cell.text for cell in row.cells])
-                    if 'ADICIONALES' in row_text.upper() and 'SUELDO FIJO' not in row_text.upper() and 'BONO' not in row_text.upper():
-                        rows_to_remove.append(i)
-                
-                # Eliminar filas en orden inverso para mantener índices
-                for i in reversed(rows_to_remove):
-                    # No podemos eliminar directamente, pero podemos limpiar el contenido
-                    for cell in table.rows[i].cells:
-                        for paragraph in cell.paragraphs:
-                            paragraph.clear()
-                            paragraph.add_run('')
+                    # Si la fila contiene "DESCANSOS" pero no tiene valores de sueldo o bono
+                    if 'DESCANSOS' in row_text.upper() and 'SUELDO FIJO' not in row_text.upper() and 'BONO' not in row_text.upper():
+                        # Limpiar solo las celdas de cantidad y valor, pero mantener "DESCANSOS" en la primera columna
+                        for idx, cell in enumerate(row.cells):
+                            # Si no es la primera columna (donde está "DESCANSOS"), limpiar
+                            if idx > 0:
+                                for paragraph in cell.paragraphs:
+                                    paragraph.clear()
+                                    paragraph.add_run('')
         
         # Guardar en memoria
         output = io.BytesIO()
