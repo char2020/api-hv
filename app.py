@@ -982,13 +982,24 @@ def generate_cuenta_cobro():
         reemplazos['NUM 1'] = telefono_valor
         reemplazos['{Num 1}'] = telefono_valor
         
-        # Banco - múltiples variaciones (variable banco1 en el Word)
+        # Banco - múltiples variaciones (variable banco1 en el Word para NOMBRE del banco)
         reemplazos['banco1'] = banco
         reemplazos['BANCO1'] = banco
         reemplazos['{banco1}'] = banco
         reemplazos['{{banco1}}'] = banco
         reemplazos['[banco1]'] = banco
         reemplazos['<<banco1>>'] = banco
+        
+        # Número de cuenta bancaria - variable nbanco1 en el Word
+        reemplazos['nbanco1'] = cuenta_bancaria
+        reemplazos['NBANCO1'] = cuenta_bancaria
+        reemplazos['NBanco1'] = cuenta_bancaria
+        reemplazos['{nbanco1}'] = cuenta_bancaria
+        reemplazos['{{nbanco1}}'] = cuenta_bancaria
+        reemplazos['[nbanco1]'] = cuenta_bancaria
+        reemplazos['<<nbanco1>>'] = cuenta_bancaria
+        reemplazos['n banco1'] = cuenta_bancaria
+        reemplazos['N BANCO1'] = cuenta_bancaria
         
         # Cuenta bancaria - múltiples variaciones (para mantener compatibilidad)
         reemplazos['cuenta1'] = cuenta_bancaria
