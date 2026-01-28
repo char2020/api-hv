@@ -1102,8 +1102,17 @@ def generate_cuenta_cobro():
         
         # Variable dia1 y dia2 - dia1 es el día de inicio, dia2 es el día final
         # Esto aplica para ambos tipos (12h y 8h)
-        dia_inicio = data.get('diaInicio', '1').strip()
-        dia_fin = data.get('diaFin', str(dias_num)).strip()
+        # Obtener diaInicio y diaFin de los datos (ya se obtuvieron antes, pero asegurarse de tenerlos)
+        dia_inicio = data.get('diaInicio', '1').strip() if data.get('diaInicio') else '1'
+        dia_fin = data.get('diaFin', '30').strip() if data.get('diaFin') else str(dias_num)
+        
+        # Debug: verificar valores
+        print(f"🔍 DEBUG dia1/dia2: diaInicio='{dia_inicio}', diaFin='{dia_fin}'")
+        print(f"🔍 DEBUG data keys: {list(data.keys())}")
+        if 'diaInicio' in data:
+            print(f"🔍 DEBUG diaInicio raw: '{data.get('diaInicio')}'")
+        if 'diaFin' in data:
+            print(f"🔍 DEBUG diaFin raw: '{data.get('diaFin')}'")
         
         # dia1 siempre es el día de inicio - múltiples variaciones para asegurar el reemplazo
         reemplazos['dia1'] = dia_inicio
