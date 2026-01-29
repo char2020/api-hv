@@ -14,7 +14,9 @@ import time
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)  # Permitir CORS para llamadas desde React
+# CORS con restricciones de seguridad - solo permitir orígenes específicos
+allowed_origins = os.getenv('ALLOWED_ORIGINS', 'https://generador-hojas-vida.web.app,https://generador-hojas-vida.firebaseapp.com').split(',')
+CORS(app, origins=allowed_origins, methods=['GET', 'POST'], allow_headers=['Content-Type'])
 
 # Configuración de APIs de iLovePDF
 # API Principal: Usada en la API de cursos-certificados (GitHub) - ~250 conversiones
@@ -31,8 +33,9 @@ ILOVEPDF_APIS = [
     {
         'name': 'backup',
         # API de Respaldo - Se usa automáticamente cuando la principal se queda sin créditos
-        'public_key': 'project_public_e8de4c9dde8d3130930dc8f9620f9fd0_4gcUq34631a35630e89502c9cb2229d123ff4',
-        'secret_key': 'secret_key_5f1ab1bb9dc866aadc8a05671e460491_zNqoaf28f8b33e1755f025940359d1d4a70a3'
+        # NOTA: Estas credenciales deben moverse a variables de entorno en producción
+        'public_key': os.getenv('ILOVEPDF_BACKUP_PUBLIC_KEY', 'project_public_e8de4c9dde8d3130930dc8f9620f9fd0_4gcUq34631a35630e89502c9cb2229d123ff4'),
+        'secret_key': os.getenv('ILOVEPDF_BACKUP_SECRET_KEY', 'secret_key_5f1ab1bb9dc866aadc8a05671e460491_zNqoaf28f8b33e1755f025940359d1d4a70a3')
     }
 ]
 
@@ -731,6 +734,12 @@ def reemplazar_texto_en_documento(doc, reemplazos):
             if 'dia' in placeholder.lower() and len(placeholder) <= 5:
                 # Buscar dia1 o dia2 incluso si está en medio de texto (ej: "AL dia2")
                 pattern = re.escape(placeholder)
+            elif placeholder == '4 TURNOS':
+                # NO reemplazar "4 TURNOS" - esto afectaría "4 TURNOS DOMICILIARIOS" en el texto descriptivo
+                continue
+            elif placeholder == 'ADICIONALES':
+                # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
+                continue
             else:
                 pattern = re.escape(placeholder)
             
@@ -741,10 +750,34 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                 # Reemplazar desde el final hacia el inicio para mantener índices
                 for match in reversed(matches):
                     start, end = match.span()
-                    texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
-                    # Log para debug de dia1 y dia2
-                    if 'dia' in placeholder.lower():
-                        print(f"  ✅ Reemplazado '{placeholder}' por '{valor}' en: ...{texto_original[max(0, start-20):min(len(texto_original), start+20)]}...")
+                    valor_reemplazo = str(valor)
+                    
+                    # Para dia1 y dia2, verificar si necesita espacios alrededor
+                    if 'dia' in placeholder.lower() and len(placeholder) <= 5:
+                        # Verificar si hay espacios alrededor en el texto original
+                        tiene_espacio_antes = start > 0 and texto_nuevo[start-1].isspace()
+                        tiene_espacio_despues = end < len(texto_nuevo) and texto_nuevo[end].isspace()
+                        
+                        # Si el valor ya tiene espacios pero el placeholder no los tenía, ajustar
+                        if valor_reemplazo.startswith(' ') and tiene_espacio_antes:
+                            valor_reemplazo = valor_reemplazo.lstrip()
+                        if valor_reemplazo.endswith(' ') and tiene_espacio_despues:
+                            valor_reemplazo = valor_reemplazo.rstrip()
+                        
+                        # Si no hay espacios alrededor y el valor tampoco los tiene, agregarlos
+                        if not tiene_espacio_antes and not valor_reemplazo.startswith(' '):
+                            # Verificar si el carácter anterior es una letra (necesita espacio)
+                            if start > 0 and texto_nuevo[start-1].isalnum():
+                                valor_reemplazo = ' ' + valor_reemplazo
+                        if not tiene_espacio_despues and not valor_reemplazo.endswith(' '):
+                            # Verificar si el carácter siguiente es una letra (necesita espacio)
+                            if end < len(texto_nuevo) and texto_nuevo[end].isalnum():
+                                valor_reemplazo = valor_reemplazo + ' '
+                    
+                    texto_nuevo = texto_nuevo[:start] + valor_reemplazo + texto_nuevo[end:]
+                    # Log para debug de dia1 y dia2 (removido por seguridad)
+                    # if 'dia' in placeholder.lower():
+                    #     print(f"  ✅ Reemplazado '{placeholder}' por '{valor_reemplazo}' en: ...{texto_original[max(0, start-20):min(len(texto_original), start+20)]}...")
         
         if cambios_realizados and texto_nuevo != texto_original:
             # Guardar formato del primer run si existe
@@ -842,42 +875,78 @@ def formatear_monto(monto, incluir_signo=True):
     except:
         return str(monto)
 
+def sanitize_input(value, max_length=500):
+    """Sanitiza un input removiendo caracteres peligrosos y limitando longitud"""
+    if not value:
+        return ''
+    # Remover caracteres de control y limitar longitud
+    sanitized = ''.join(c for c in str(value) if c.isprintable() or c in ['\n', '\r', '\t'])[:max_length]
+    return sanitized.strip()
+
+def validate_numeric(value, min_val=None, max_val=None, default=0):
+    """Valida y convierte un valor numérico"""
+    try:
+        num = float(str(value).replace(',', '.').replace('.', '', str(value).count('.') - 1))
+        if min_val is not None and num < min_val:
+            return default
+        if max_val is not None and num > max_val:
+            return default
+        return num
+    except (ValueError, AttributeError):
+        return default
+
 @app.route('/generate-cuenta-cobro', methods=['POST'])
 def generate_cuenta_cobro():
     """Genera una cuenta de cobro usando el template Word"""
     try:
+        if not request.json:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+        
         data = request.json
         
-        # Obtener datos del formulario
-        nombre = data.get('nombre', '').strip()
-        cedula = data.get('cedula', '').strip()
-        telefono = data.get('phone', '').strip() or data.get('telefono', '').strip() or data.get('phoneNumber', '').strip()
-        print(f"📞 Teléfono recibido: '{telefono}'")  # Debug
-        mes = data.get('mes', '').strip()
-        año = data.get('año', '').strip()
-        sueldo_fijo = data.get('sueldoFijo', '').strip()
-        mes_completo = data.get('mesCompleto', True)
-        dia_inicio = data.get('diaInicio', '1').strip()
-        dia_fin = data.get('diaFin', '30').strip()
-        dias_trabajados = data.get('diasTrabajados', '30').strip()
+        # Validar y sanitizar datos del formulario
+        nombre = sanitize_input(data.get('nombre', ''), max_length=200)
+        if not nombre:
+            return jsonify({'error': 'El nombre es obligatorio'}), 400
+        
+        cedula = sanitize_input(data.get('cedula', ''), max_length=50)
+        if not cedula:
+            return jsonify({'error': 'La cédula es obligatoria'}), 400
+        
+        telefono = sanitize_input(data.get('phone', '') or data.get('telefono', '') or data.get('phoneNumber', ''), max_length=20)
+        # Remover print de debug con datos sensibles en producción
+        # print(f"📞 Teléfono recibido: '{telefono}'")  # Debug - removido por seguridad
+        mes = sanitize_input(data.get('mes', ''), max_length=50)
+        año = sanitize_input(data.get('año', ''), max_length=10)
+        
+        # Validar valores numéricos
+        sueldo_fijo = str(validate_numeric(data.get('sueldoFijo', '0'), min_val=0, max_val=10000000))
+        mes_completo = bool(data.get('mesCompleto', True))
+        dia_inicio = str(int(validate_numeric(data.get('diaInicio', '1'), min_val=1, max_val=31, default=1)))
+        dia_fin = str(int(validate_numeric(data.get('diaFin', '30'), min_val=1, max_val=31, default=30)))
+        dias_trabajados = str(int(validate_numeric(data.get('diasTrabajados', '30'), min_val=1, max_val=31, default=30)))
         
         # Si no es mes completo, calcular días trabajados desde día inicio hasta día fin
         if not mes_completo:
             try:
-                dia_inicio_num = int(dia_inicio) if dia_inicio.isdigit() else 1
-                dia_fin_num = int(dia_fin) if dia_fin.isdigit() else 30
+                dia_inicio_num = int(dia_inicio)
+                dia_fin_num = int(dia_fin)
                 if dia_fin_num >= dia_inicio_num:
                     dias_trabajados = str((dia_fin_num - dia_inicio_num) + 1)
-            except:
+            except (ValueError, TypeError):
                 pass
-        bono_seguridad = data.get('bonoSeguridad', '').strip()
-        turnos_descansos = data.get('turnosDescansos', '0').strip()
-        paciente = data.get('paciente', '').strip()
-        cuenta_bancaria = data.get('cuentaBancaria', '').strip()
-        banco = data.get('banco', '').strip() or 'Bancolombia'
-        tipo_cuenta_cobro = data.get('tipoCuentaCobro', '12h').strip()  # '12h' o '8h'
-        tiene_auxilio_transporte = data.get('tieneAuxilioTransporte', False)
-        auxilio_transporte = data.get('auxilioTransporte', '').strip()
+        
+        # Validar y sanitizar valores monetarios y otros campos
+        bono_seguridad = str(validate_numeric(data.get('bonoSeguridad', '0'), min_val=0, max_val=10000000))
+        turnos_descansos = str(int(validate_numeric(data.get('turnosDescansos', '0'), min_val=0, max_val=100, default=0)))
+        paciente = sanitize_input(data.get('paciente', '') or data.get('patientName', ''), max_length=200)
+        cuenta_bancaria = sanitize_input(data.get('cuentaBancaria', '') or data.get('bankAccount', ''), max_length=50)
+        banco = sanitize_input(data.get('banco', ''), max_length=100).upper() or 'Bancolombia'
+        tipo_cuenta_cobro = sanitize_input(data.get('tipoCuentaCobro', '12h'), max_length=10)
+        if tipo_cuenta_cobro not in ['12h', '8h']:
+            tipo_cuenta_cobro = '12h'  # Valor por defecto seguro
+        tiene_auxilio_transporte = bool(data.get('tieneAuxilioTransporte', False))
+        auxilio_transporte = str(validate_numeric(data.get('auxilioTransporte', '0'), min_val=0, max_val=10000000))
         
         # Calcular sueldo proporcional según días trabajados
         sueldo_proporcional = 0
@@ -1107,40 +1176,50 @@ def generate_cuenta_cobro():
         dia_fin = data.get('diaFin', '30').strip() if data.get('diaFin') else str(dias_num)
         
         # Debug: verificar valores
-        print(f"🔍 DEBUG dia1/dia2: diaInicio='{dia_inicio}', diaFin='{dia_fin}'")
-        print(f"🔍 DEBUG data keys: {list(data.keys())}")
-        if 'diaInicio' in data:
-            print(f"🔍 DEBUG diaInicio raw: '{data.get('diaInicio')}'")
-        if 'diaFin' in data:
-            print(f"🔍 DEBUG diaFin raw: '{data.get('diaFin')}'")
+        # Debug removido por seguridad - solo en desarrollo
+        # print(f"🔍 DEBUG dia1/dia2: diaInicio='{dia_inicio}', diaFin='{dia_fin}'")
+        # print(f"🔍 DEBUG data keys: {list(data.keys())}")
+        # if 'diaInicio' in data:
+        #     print(f"🔍 DEBUG diaInicio raw: '{data.get('diaInicio')}'")
+        # if 'diaFin' in data:
+        #     print(f"🔍 DEBUG diaFin raw: '{data.get('diaFin')}'")
         
         # dia1 siempre es el día de inicio - múltiples variaciones para asegurar el reemplazo
-        reemplazos['dia1'] = dia_inicio
-        reemplazos['DIA1'] = dia_inicio
+        # Agregar espacios alrededor para evitar que quede pegado
+        reemplazos['dia1'] = f' {dia_inicio} '  # Agregar espacios alrededor
+        reemplazos['DIA1'] = f' {dia_inicio} '
         reemplazos['{dia1}'] = dia_inicio
         reemplazos['{{dia1}}'] = dia_inicio
         reemplazos['[dia1]'] = dia_inicio
         reemplazos['<<dia1>>'] = dia_inicio
-        reemplazos[' dia1 '] = dia_inicio  # Con espacios
-        reemplazos[' DIA1 '] = dia_inicio  # Con espacios
-        reemplazos['dia1 '] = dia_inicio  # Con espacio al final
-        reemplazos[' dia1'] = dia_inicio  # Con espacio al inicio
+        reemplazos[' dia1 '] = f' {dia_inicio} '  # Mantener espacios
+        reemplazos[' DIA1 '] = f' {dia_inicio} '
+        reemplazos['dia1 '] = f' {dia_inicio} '  # Mantener espacio al final
+        reemplazos[' dia1'] = f' {dia_inicio} '  # Mantener espacio al inicio
         reemplazos['diaInicio'] = dia_inicio
         reemplazos['dia_inicio'] = dia_inicio
         
         # dia2 siempre es el día final - múltiples variaciones para asegurar el reemplazo
-        reemplazos['dia2'] = dia_fin
-        reemplazos['DIA2'] = dia_fin
+        # Agregar espacios alrededor para evitar que quede pegado
+        reemplazos['dia2'] = f' {dia_fin} '  # Agregar espacios alrededor
+        reemplazos['DIA2'] = f' {dia_fin} '
         reemplazos['{dia2}'] = dia_fin
         reemplazos['{{dia2}}'] = dia_fin
         reemplazos['[dia2]'] = dia_fin
         reemplazos['<<dia2>>'] = dia_fin
-        reemplazos[' dia2 '] = dia_fin  # Con espacios
-        reemplazos[' DIA2 '] = dia_fin  # Con espacios
-        reemplazos['dia2 '] = dia_fin  # Con espacio al final
-        reemplazos[' dia2'] = dia_fin  # Con espacio al inicio
+        reemplazos[' dia2 '] = f' {dia_fin} '  # Mantener espacios
+        reemplazos[' DIA2 '] = f' {dia_fin} '
+        reemplazos['dia2 '] = f' {dia_fin} '  # Mantener espacio al final
+        reemplazos[' dia2'] = f' {dia_fin} '  # Mantener espacio al inicio
         reemplazos['diaFin'] = dia_fin
         reemplazos['dia_fin'] = dia_fin
+        
+        # Patrones comunes con "al" para reemplazar correctamente
+        reemplazos[f'dia1 al dia2'] = f'{dia_inicio} al {dia_fin}'
+        reemplazos[f'DIA1 AL DIA2'] = f'{dia_inicio} al {dia_fin}'
+        reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
+        reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
+        reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         
         # Bono seguridad - múltiples variaciones (sin $ adicional para evitar duplicaciones)
         # Solo reemplazar variables específicas, NO valores fijos del template como "200.000" o "BONO SEGURIDAD"
@@ -1159,7 +1238,7 @@ def generate_cuenta_cobro():
             adicionales_texto_turnos = f"{turnos_num} TURNOS"
             # Limpiar duplicaciones de "4 TURNOS" -> solo el número
             reemplazos['4 4 TURNOS'] = adicionales_texto_turnos  # Limpiar duplicación
-            reemplazos['4 TURNOS'] = adicionales_texto_turnos
+            # NO reemplazar "4 TURNOS" directamente - esto afectaría "4 TURNOS DOMICILIARIOS" en el texto descriptivo
             # NO reemplazar "TURNOS" solo - esto afectaría el texto descriptivo "TURNOS DOMICILIARIOS"
             # Solo reemplazar variaciones específicas con placeholders
             reemplazos['{turnos}'] = adicionales_texto_turnos
@@ -1176,19 +1255,19 @@ def generate_cuenta_cobro():
             reemplazos['adicionales1'] = adicionales_formateado
             reemplazos['ADICIONALES1'] = adicionales_formateado
             reemplazos['{adicionales1}'] = adicionales_formateado
-            reemplazos['ADICIONALES'] = adicionales_formateado
+            # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo en la tabla
             # NO reemplazar "DESCANSOS" - es el texto de descripción que debe mantenerse
             # Solo reemplazar el valor monetario, no el texto descriptivo
         else:
-            # Si no hay turnos, dejar vacío los valores pero NO eliminar "DESCANSOS" ni "TURNOS"
+            # Si no hay turnos, dejar vacío los valores pero NO eliminar "DESCANSOS", "TURNOS" ni "ADICIONALES"
             reemplazos['4 4 TURNOS'] = ''  # Limpiar duplicación
-            reemplazos['4 TURNOS'] = ''
+            # NO reemplazar "4 TURNOS" - esto afectaría "4 TURNOS DOMICILIARIOS"
             reemplazos['240.000'] = ''
             reemplazos['$240.000'] = ''
             reemplazos['$$240.000'] = ''
             reemplazos['$$$240.000'] = ''
             reemplazos['$ 240.000'] = ''
-            reemplazos['ADICIONALES'] = ''
+            # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
             # NO reemplazar "DESCANSOS" ni "TURNOS" - deben mantenerse como texto descriptivo
             # Solo limpiar placeholders específicos
             reemplazos['{turnos}'] = ''
@@ -1234,9 +1313,10 @@ def generate_cuenta_cobro():
         print(f"🔍 Reemplazos a realizar: {len(reemplazos)} variables")
         print(f"📅 dia1 (día inicio): '{dia_inicio}'")
         print(f"📅 dia2 (día fin): '{dia_fin}'")
-        for key, value in sorted(reemplazos.items()):
-            if value and ('dia' in key.lower() or 'DIA' in key):  # Mostrar todos los relacionados con dia
-                print(f"  - {key} -> {value}")
+        # Debug removido por seguridad - comentado para producción
+        # for key, value in sorted(reemplazos.items()):
+        #     if value and ('dia' in key.lower() or 'DIA' in key):
+        #         print(f"  - {key} -> {value}")
         
         # Reemplazar texto en el documento
         reemplazar_texto_en_documento(doc, reemplazos)
@@ -1245,8 +1325,10 @@ def generate_cuenta_cobro():
         # Verificar si dia1 y dia2 fueron reemplazados correctamente
         texto_completo = ' '.join([para.text for para in doc.paragraphs])
         if 'dia1' in texto_completo.lower() or 'dia2' in texto_completo.lower():
-            print(f"⚠️ ADVERTENCIA: Todavía hay 'dia1' o 'dia2' sin reemplazar en el documento")
-            print(f"   Texto encontrado: {texto_completo[texto_completo.lower().find('dia'):texto_completo.lower().find('dia')+50]}")
+            # Debug removido por seguridad - solo en desarrollo
+            # print(f"⚠️ ADVERTENCIA: Todavía hay 'dia1' o 'dia2' sin reemplazar en el documento")
+            # print(f"   Texto encontrado: {texto_completo[texto_completo.lower().find('dia'):texto_completo.lower().find('dia')+50]}")
+            pass
         
         # Limpiar duplicaciones después del reemplazo
         # Buscar y limpiar patrones comunes de duplicación
