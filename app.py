@@ -1046,6 +1046,10 @@ def generate_cuenta_cobro():
                 bono_seguridad_formateado = bono_seguridad
                 bono_seguridad_sin_signo = bono_seguridad
         
+        # Formatear sueldo fijo mensual (no el proporcional) - este es el valor base
+        sueldo_fijo_num = float(sueldo_fijo.replace('.', '').replace(',', '.')) if sueldo_fijo else 0
+        sueldo_fijo_formateado = formatear_monto(sueldo_fijo_num, incluir_signo=False)
+        
         # Formatear sueldo proporcional (sin $ para evitar duplicaciones)
         sueldo_proporcional_formateado = formatear_monto(sueldo_proporcional, incluir_signo=False)
         
@@ -1135,6 +1139,11 @@ def generate_cuenta_cobro():
         reemplazos['$$2.440.000'] = total_formateado  # Limpiar múltiples $
         reemplazos['$2.440.000'] = total_formateado  # Sin $ adicional
         reemplazos['2.440.000'] = total_formateado
+        # Reemplazar "23.000.000" que aparece incorrectamente en el template
+        reemplazos['23.000.000'] = total_formateado
+        reemplazos['$23.000.000'] = total_formateado  # Sin $ adicional
+        reemplazos['$$23.000.000'] = total_formateado  # Limpiar múltiples $
+        reemplazos['$ 23.000.000'] = total_formateado  # Sin $ adicional
         
         # Paciente - múltiples variaciones
         paciente_valor = paciente.upper() if paciente else ''
@@ -1145,14 +1154,23 @@ def generate_cuenta_cobro():
         reemplazos['[paciente1]'] = paciente_valor
         reemplazos['<<paciente1>>'] = paciente_valor
         
+        # Sueldo fijo mensual - múltiples variaciones (este es el valor base, no el proporcional)
+        # Reemplazar "20.000.000" que aparece incorrectamente en el template
+        reemplazos['20.000.000'] = sueldo_fijo_formateado
+        reemplazos['$20.000.000'] = sueldo_fijo_formateado  # Sin $ adicional
+        reemplazos['$$20.000.000'] = sueldo_fijo_formateado  # Limpiar múltiples $
+        reemplazos['$$$20.000.000'] = sueldo_fijo_formateado  # Limpiar múltiples $
+        reemplazos['$ 20.000.000'] = sueldo_fijo_formateado  # Sin $ adicional
+        reemplazos['$ $ 20.000.000'] = sueldo_fijo_formateado  # Limpiar múltiples $
+        # También reemplazar el valor correcto "2.000.000" si aparece en el template
+        reemplazos['2.000.000'] = sueldo_fijo_formateado  # Para SUELDO FIJO MENSUAL
+        reemplazos['$2.000.000'] = sueldo_fijo_formateado  # Sin $ adicional
+        reemplazos['sueldoFijoMensual'] = sueldo_fijo_formateado
+        reemplazos['SUELDO FIJO MENSUAL'] = sueldo_fijo_formateado
+        reemplazos['sueldoFijo'] = sueldo_fijo_formateado
+        
         # Sueldo proporcional - múltiples variaciones y valores de ejemplo
-        # Reemplazar valores con $ y sin $ para evitar duplicaciones
-        reemplazos['2.000.000'] = sueldo_proporcional_formateado
-        reemplazos['$2.000.000'] = sueldo_proporcional_formateado  # Sin $ adicional
-        reemplazos['$$2.000.000'] = sueldo_proporcional_formateado  # Limpiar múltiples $
-        reemplazos['$$$2.000.000'] = sueldo_proporcional_formateado  # Limpiar múltiples $
-        reemplazos['$ 2.000.000'] = sueldo_proporcional_formateado  # Sin $ adicional
-        reemplazos['$ $ 2.000.000'] = sueldo_proporcional_formateado  # Limpiar múltiples $
+        # Reemplazar valores con $ y sin $ para evitar duplicaciones (solo para el proporcional)
         reemplazos['sueldo1'] = sueldo_proporcional_formateado
         reemplazos['SUELDO1'] = sueldo_proporcional_formateado
         reemplazos['{sueldo1}'] = sueldo_proporcional_formateado
