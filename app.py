@@ -920,21 +920,71 @@ def generate_cuenta_cobro():
         año = sanitize_input(data.get('año', ''), max_length=10)
         
         # Validar valores numéricos
-        sueldo_fijo = str(validate_numeric(data.get('sueldoFijo', '0'), min_val=0, max_val=10000000))
         mes_completo = bool(data.get('mesCompleto', True))
         dia_inicio = str(int(validate_numeric(data.get('diaInicio', '1'), min_val=1, max_val=31, default=1)))
         dia_fin = str(int(validate_numeric(data.get('diaFin', '30'), min_val=1, max_val=31, default=30)))
-        dias_trabajados = str(int(validate_numeric(data.get('diasTrabajados', '30'), min_val=1, max_val=31, default=30)))
         
-        # Si no es mes completo, calcular días trabajados desde día inicio hasta día fin
+        # Calcular días trabajados
+        dias_num = 30  # Valor por defecto
         if not mes_completo:
             try:
                 dia_inicio_num = int(dia_inicio)
                 dia_fin_num = int(dia_fin)
                 if dia_fin_num >= dia_inicio_num:
-                    dias_trabajados = str((dia_fin_num - dia_inicio_num) + 1)
+                    dias_num = (dia_fin_num - dia_inicio_num) + 1
+                else:
+                    dias_num = 30
             except (ValueError, TypeError):
-                pass
+                dias_num = 30
+        else:
+            # Si es mes completo, usar el valor del campo o calcular desde el mes
+            try:
+                dias_trabajados_input = data.get('diasTrabajados', '')
+                if dias_trabajados_input:
+                    dias_num = int(validate_numeric(dias_trabajados_input, min_val=1, max_val=31, default=30))
+                else:
+                    dias_num = 30
+            except:
+                dias_num = 30
+        
+        # Obtener el número de días del mes seleccionado
+        try:
+            mes_num = int(mes) if mes.isdigit() else 0
+            año_num = int(año) if año.isdigit() else datetime.now().year
+            if 1 <= mes_num <= 12:
+                from calendar import monthrange
+                dias_del_mes = monthrange(año_num, mes_num)[1]
+            else:
+                dias_del_mes = 30
+        except:
+            dias_del_mes = 30
+        
+        # Limitar días trabajados al máximo de días del mes
+        if dias_num > dias_del_mes:
+            dias_num = dias_del_mes
+        if dias_num < 1:
+            dias_num = 30
+        
+        # Parsear sueldo fijo correctamente (soporta formatos: "2000000", "2.000.000", "2,000,000")
+        sueldo_fijo_num = 0
+        try:
+            sueldo_fijo_raw = str(data.get('sueldoFijo', '0')).strip()
+            if sueldo_fijo_raw:
+                # Remover puntos (separadores de miles) y reemplazar coma por punto (decimal)
+                sueldo_fijo_limpio = sueldo_fijo_raw.replace('.', '').replace(',', '.')
+                sueldo_fijo_num = float(sueldo_fijo_limpio)
+                if sueldo_fijo_num < 0:
+                    sueldo_fijo_num = 0
+                if sueldo_fijo_num > 10000000:
+                    sueldo_fijo_num = 10000000
+        except (ValueError, TypeError):
+            sueldo_fijo_num = 0
+        
+        # Calcular sueldo proporcional según días trabajados
+        sueldo_proporcional = 0
+        if sueldo_fijo_num > 0 and dias_del_mes > 0:
+            valor_por_dia = sueldo_fijo_num / dias_del_mes
+            sueldo_proporcional = round(valor_por_dia * dias_num)
         
         # Validar y sanitizar valores monetarios y otros campos
         bono_seguridad = str(validate_numeric(data.get('bonoSeguridad', '0'), min_val=0, max_val=10000000))
@@ -944,73 +994,39 @@ def generate_cuenta_cobro():
         banco = sanitize_input(data.get('banco', ''), max_length=100).upper() or 'Bancolombia'
         tipo_cuenta_cobro = sanitize_input(data.get('tipoCuentaCobro', '12h'), max_length=10)
         if tipo_cuenta_cobro not in ['12h', '8h']:
-            tipo_cuenta_cobro = '12h'  # Valor por defecto seguro
+            tipo_cuenta_cobro = '12h'
         tiene_auxilio_transporte = bool(data.get('tieneAuxilioTransporte', False))
         auxilio_transporte = str(validate_numeric(data.get('auxilioTransporte', '0'), min_val=0, max_val=10000000))
         
-        # Calcular sueldo proporcional según días trabajados
-        sueldo_proporcional = 0
-        dias_num = int(dias_trabajados) if dias_trabajados.isdigit() else 30
-        if dias_num < 1:
-            dias_num = 30
-        
-        # Obtener el número de días del mes seleccionado
+        # Parsear bono de seguridad
+        bono_seguridad_num = 0
         try:
-            mes_num = int(mes) if mes.isdigit() else 0
-            año_num = int(año) if año.isdigit() else datetime.now().year
-            if 1 <= mes_num <= 12:
-                # Obtener el último día del mes (días del mes)
-                from calendar import monthrange
-                dias_del_mes = monthrange(año_num, mes_num)[1]  # monthrange devuelve (día de la semana, días del mes)
-            else:
-                dias_del_mes = 30  # Valor por defecto si el mes no es válido
-        except:
-            dias_del_mes = 30  # Valor por defecto en caso de error
+            if bono_seguridad:
+                bono_limpio = str(bono_seguridad).replace('.', '').replace(',', '.')
+                bono_seguridad_num = float(bono_limpio)
+                if bono_seguridad_num < 0:
+                    bono_seguridad_num = 0
+        except (ValueError, TypeError):
+            bono_seguridad_num = 0
         
-        # Limitar días trabajados al máximo de días del mes
-        if dias_num > dias_del_mes:
-            dias_num = dias_del_mes
-        
-        try:
-            if sueldo_fijo:
-                sueldo_fijo_num = float(sueldo_fijo.replace('.', '').replace(',', '.'))
-                # Calcular: (sueldo fijo / días del mes) * días trabajados
-                # Primero dividir, luego multiplicar, y finalmente redondear
-                valor_por_dia = sueldo_fijo_num / dias_del_mes
-                sueldo_proporcional = valor_por_dia * dias_num
-                # Redondear a número entero solo al final
-                sueldo_proporcional = round(sueldo_proporcional)
-        except:
-            pass
+        # Parsear auxilio de transporte
+        auxilio_transporte_num = 0
+        if tiene_auxilio_transporte and auxilio_transporte:
+            try:
+                auxilio_limpio = str(auxilio_transporte).replace('.', '').replace(',', '.')
+                auxilio_transporte_num = float(auxilio_limpio)
+                if auxilio_transporte_num < 0:
+                    auxilio_transporte_num = 0
+            except (ValueError, TypeError):
+                auxilio_transporte_num = 0
         
         # Calcular adicionales (turnos * 60000)
         turnos_num = int(turnos_descansos) if turnos_descansos.isdigit() else 0
-        valor_por_turno = 60000  # Cambiado a 60.000 por día
+        valor_por_turno = 60000
         adicionales_valor = turnos_num * valor_por_turno
         
         # Calcular total
-        total = 0
-        try:
-            # Agregar sueldo proporcional
-            total += sueldo_proporcional
-            
-            # Agregar bono seguridad
-            if bono_seguridad:
-                total += float(bono_seguridad.replace('.', '').replace(',', '.'))
-            
-            # Agregar adicionales si hay turnos de descansos
-            if turnos_num > 0:
-                total += adicionales_valor
-            
-            # Agregar auxilio de transporte si está activado
-            if tiene_auxilio_transporte and auxilio_transporte:
-                try:
-                    auxilio_num = float(auxilio_transporte.replace('.', '').replace(',', '.'))
-                    total += auxilio_num
-                except:
-                    pass
-        except:
-            pass
+        total = sueldo_proporcional + bono_seguridad_num + adicionales_valor + auxilio_transporte_num
         
         # Formatear fecha (mes en texto)
         fecha_texto = ''
@@ -1035,19 +1051,9 @@ def generate_cuenta_cobro():
         reemplazos = {}
         
         # Formatear bono seguridad (sin $ para evitar duplicaciones)
-        bono_seguridad_formateado = ''
-        bono_seguridad_sin_signo = ''
-        if bono_seguridad:
-            try:
-                bono_num = float(bono_seguridad.replace('.', '').replace(',', '.'))
-                bono_seguridad_formateado = formatear_monto(bono_num, incluir_signo=False)
-                bono_seguridad_sin_signo = bono_seguridad_formateado
-            except:
-                bono_seguridad_formateado = bono_seguridad
-                bono_seguridad_sin_signo = bono_seguridad
+        bono_seguridad_formateado = formatear_monto(bono_seguridad_num, incluir_signo=False) if bono_seguridad_num > 0 else ''
         
         # Formatear sueldo fijo mensual (no el proporcional) - este es el valor base
-        sueldo_fijo_num = float(sueldo_fijo.replace('.', '').replace(',', '.')) if sueldo_fijo else 0
         sueldo_fijo_formateado = formatear_monto(sueldo_fijo_num, incluir_signo=False)
         
         # Formatear sueldo proporcional (sin $ para evitar duplicaciones)
@@ -1155,19 +1161,13 @@ def generate_cuenta_cobro():
         reemplazos['<<paciente1>>'] = paciente_valor
         
         # Sueldo fijo mensual - múltiples variaciones (este es el valor base, no el proporcional)
-        # Reemplazar "20.000.000" que aparece incorrectamente en el template
-        reemplazos['20.000.000'] = sueldo_fijo_formateado
-        reemplazos['$20.000.000'] = sueldo_fijo_formateado  # Sin $ adicional
-        reemplazos['$$20.000.000'] = sueldo_fijo_formateado  # Limpiar múltiples $
-        reemplazos['$$$20.000.000'] = sueldo_fijo_formateado  # Limpiar múltiples $
-        reemplazos['$ 20.000.000'] = sueldo_fijo_formateado  # Sin $ adicional
-        reemplazos['$ $ 20.000.000'] = sueldo_fijo_formateado  # Limpiar múltiples $
-        # También reemplazar el valor correcto "2.000.000" si aparece en el template
-        reemplazos['2.000.000'] = sueldo_fijo_formateado  # Para SUELDO FIJO MENSUAL
-        reemplazos['$2.000.000'] = sueldo_fijo_formateado  # Sin $ adicional
         reemplazos['sueldoFijoMensual'] = sueldo_fijo_formateado
         reemplazos['SUELDO FIJO MENSUAL'] = sueldo_fijo_formateado
         reemplazos['sueldoFijo'] = sueldo_fijo_formateado
+        reemplazos['sueldoFijo1'] = sueldo_fijo_formateado
+        reemplazos['SUELDOFIJO1'] = sueldo_fijo_formateado
+        reemplazos['{sueldoFijo}'] = sueldo_fijo_formateado
+        reemplazos['{{sueldoFijo}}'] = sueldo_fijo_formateado
         
         # Sueldo proporcional - múltiples variaciones y valores de ejemplo
         # Reemplazar valores con $ y sin $ para evitar duplicaciones (solo para el proporcional)
@@ -1294,20 +1294,16 @@ def generate_cuenta_cobro():
             reemplazos['<<turnos>>'] = ''
         
         # Auxilio de transporte
-        if tiene_auxilio_transporte and auxilio_transporte:
-            try:
-                auxilio_num = float(auxilio_transporte.replace('.', '').replace(',', '.'))
-                auxilio_formateado = formatear_monto(auxilio_num, incluir_signo=False)
-                reemplazos['auxilioTransporte'] = auxilio_formateado
-                reemplazos['AUXILIO TRANSPORTE'] = auxilio_formateado
-                reemplazos['auxilio1'] = auxilio_formateado
-                reemplazos['AUXILIO1'] = auxilio_formateado
-                reemplazos['{auxilio1}'] = auxilio_formateado
-                reemplazos['{{auxilio1}}'] = auxilio_formateado
-                reemplazos['[auxilio1]'] = auxilio_formateado
-                reemplazos['<<auxilio1>>'] = auxilio_formateado
-            except:
-                pass
+        if tiene_auxilio_transporte and auxilio_transporte_num > 0:
+            auxilio_formateado = formatear_monto(auxilio_transporte_num, incluir_signo=False)
+            reemplazos['auxilioTransporte'] = auxilio_formateado
+            reemplazos['AUXILIO TRANSPORTE'] = auxilio_formateado
+            reemplazos['auxilio1'] = auxilio_formateado
+            reemplazos['AUXILIO1'] = auxilio_formateado
+            reemplazos['{auxilio1}'] = auxilio_formateado
+            reemplazos['{{auxilio1}}'] = auxilio_formateado
+            reemplazos['[auxilio1]'] = auxilio_formateado
+            reemplazos['<<auxilio1>>'] = auxilio_formateado
         else:
             reemplazos['auxilioTransporte'] = ''
             reemplazos['AUXILIO TRANSPORTE'] = ''
