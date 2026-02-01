@@ -734,11 +734,15 @@ def reemplazar_texto_en_documento(doc, reemplazos):
             if 'dia' in placeholder.lower() and len(placeholder) <= 5:
                 # Buscar dia1 o dia2 incluso si está en medio de texto (ej: "AL dia2")
                 pattern = re.escape(placeholder)
-            elif placeholder == '4 TURNOS':
-                # NO reemplazar "4 TURNOS" - esto afectaría "4 TURNOS DOMICILIARIOS" en el texto descriptivo
+            elif placeholder.upper() in ['4 TURNOS', 'ADICIONALES', 'SUELDO FIJO MENSUAL', 'SUELDO PROPORCIONAL', 
+                                         'BONO SEGURIDAD', 'AUXILIO DE TRANSPORTE', 'TURNOS', 'DESCANSOS']:
+                # NO reemplazar texto descriptivo - debe mantenerse en el documento
                 continue
-            elif placeholder == 'ADICIONALES':
-                # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
+            elif 'SUELDO FIJO' in placeholder.upper() or 'SUELDO PROPORCIONAL' in placeholder.upper():
+                # NO reemplazar texto descriptivo completo
+                continue
+            elif 'BONO SEGURIDAD' in placeholder.upper() or 'AUXILIO' in placeholder.upper():
+                # NO reemplazar texto descriptivo completo
                 continue
             else:
                 pattern = re.escape(placeholder)
@@ -1025,8 +1029,10 @@ def generate_cuenta_cobro():
         valor_por_turno = 60000
         adicionales_valor = turnos_num * valor_por_turno
         
-        # Calcular total
+        # Calcular total correctamente
         total = sueldo_proporcional + bono_seguridad_num + adicionales_valor + auxilio_transporte_num
+        # Asegurar que el total sea un número entero
+        total = round(total)
         
         # Formatear fecha (mes en texto)
         fecha_texto = ''
@@ -1140,16 +1146,20 @@ def generate_cuenta_cobro():
         reemplazos['total1'] = total_formateado
         reemplazos['TOTAL1'] = total_formateado
         reemplazos['{total1}'] = total_formateado
-        # Limpiar duplicaciones de $ en el total
-        reemplazos['$ $2.440.000'] = total_formateado  # Limpiar múltiples $
-        reemplazos['$$2.440.000'] = total_formateado  # Limpiar múltiples $
-        reemplazos['$2.440.000'] = total_formateado  # Sin $ adicional
+        # Reemplazar valores hardcodeados comunes en el template (solo para el TOTAL)
+        reemplazos['5.000.000'] = total_formateado
+        reemplazos['$5.000.000'] = total_formateado
+        reemplazos['$ 5.000.000'] = total_formateado
+        reemplazos['$$5.000.000'] = total_formateado
+        reemplazos['$ $5.000.000'] = total_formateado
         reemplazos['2.440.000'] = total_formateado
-        # Reemplazar "23.000.000" que aparece incorrectamente en el template
+        reemplazos['$2.440.000'] = total_formateado
+        reemplazos['$ $2.440.000'] = total_formateado
+        reemplazos['$$2.440.000'] = total_formateado
         reemplazos['23.000.000'] = total_formateado
-        reemplazos['$23.000.000'] = total_formateado  # Sin $ adicional
-        reemplazos['$$23.000.000'] = total_formateado  # Limpiar múltiples $
-        reemplazos['$ 23.000.000'] = total_formateado  # Sin $ adicional
+        reemplazos['$23.000.000'] = total_formateado
+        reemplazos['$ 23.000.000'] = total_formateado
+        reemplazos['$$23.000.000'] = total_formateado
         
         # Paciente - múltiples variaciones
         paciente_valor = paciente.upper() if paciente else ''
@@ -1160,22 +1170,25 @@ def generate_cuenta_cobro():
         reemplazos['[paciente1]'] = paciente_valor
         reemplazos['<<paciente1>>'] = paciente_valor
         
-        # Sueldo fijo mensual - múltiples variaciones (este es el valor base, no el proporcional)
+        # Sueldo fijo mensual - SOLO placeholders específicos, NO texto descriptivo
+        # NO reemplazar "SUELDO FIJO MENSUAL" - es texto descriptivo que debe mantenerse
         reemplazos['sueldoFijoMensual'] = sueldo_fijo_formateado
-        reemplazos['SUELDO FIJO MENSUAL'] = sueldo_fijo_formateado
-        reemplazos['sueldoFijo'] = sueldo_fijo_formateado
         reemplazos['sueldoFijo1'] = sueldo_fijo_formateado
         reemplazos['SUELDOFIJO1'] = sueldo_fijo_formateado
         reemplazos['{sueldoFijo}'] = sueldo_fijo_formateado
         reemplazos['{{sueldoFijo}}'] = sueldo_fijo_formateado
+        reemplazos['[sueldoFijo]'] = sueldo_fijo_formateado
+        reemplazos['<<sueldoFijo>>'] = sueldo_fijo_formateado
         
-        # Sueldo proporcional - múltiples variaciones y valores de ejemplo
-        # Reemplazar valores con $ y sin $ para evitar duplicaciones (solo para el proporcional)
+        # Sueldo proporcional - SOLO placeholders específicos, NO texto descriptivo
+        # NO reemplazar "SUELDO PROPORCIONAL" - es texto descriptivo que debe mantenerse
         reemplazos['sueldo1'] = sueldo_proporcional_formateado
         reemplazos['SUELDO1'] = sueldo_proporcional_formateado
         reemplazos['{sueldo1}'] = sueldo_proporcional_formateado
+        reemplazos['{{sueldo1}}'] = sueldo_proporcional_formateado
+        reemplazos['[sueldo1]'] = sueldo_proporcional_formateado
+        reemplazos['<<sueldo1>>'] = sueldo_proporcional_formateado
         reemplazos['sueldoProporcional'] = sueldo_proporcional_formateado
-        reemplazos['SUELDO PROPORCIONAL'] = sueldo_proporcional_formateado
         
         # Días trabajados
         dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
