@@ -1145,7 +1145,7 @@ def generate_cuenta_cobro():
         reemplazos['[mes1]'] = fecha_texto
         reemplazos['<<mes1>>'] = fecha_texto
         
-        # Total/Valor - múltiples variaciones (sin $ adicional para evitar duplicaciones)
+        # Total/Valor - solo variables, no valores hardcodeados
         reemplazos['valor1'] = total_formateado
         reemplazos['VALOR1'] = total_formateado
         reemplazos['{valor1}'] = total_formateado
@@ -1155,20 +1155,6 @@ def generate_cuenta_cobro():
         reemplazos['total1'] = total_formateado
         reemplazos['TOTAL1'] = total_formateado
         reemplazos['{total1}'] = total_formateado
-        # Reemplazar valores hardcodeados comunes en el template (solo para el TOTAL)
-        reemplazos['5.000.000'] = total_formateado
-        reemplazos['$5.000.000'] = total_formateado
-        reemplazos['$ 5.000.000'] = total_formateado
-        reemplazos['$$5.000.000'] = total_formateado
-        reemplazos['$ $5.000.000'] = total_formateado
-        reemplazos['2.440.000'] = total_formateado
-        reemplazos['$2.440.000'] = total_formateado
-        reemplazos['$ $2.440.000'] = total_formateado
-        reemplazos['$$2.440.000'] = total_formateado
-        reemplazos['23.000.000'] = total_formateado
-        reemplazos['$23.000.000'] = total_formateado
-        reemplazos['$ 23.000.000'] = total_formateado
-        reemplazos['$$23.000.000'] = total_formateado
         
         # Paciente - múltiples variaciones
         paciente_valor = paciente.upper() if paciente else ''
@@ -1186,13 +1172,6 @@ def generate_cuenta_cobro():
         reemplazos['{{sf1}}'] = sf1_formateado
         reemplazos['[sf1]'] = sf1_formateado
         reemplazos['<<sf1>>'] = sf1_formateado
-        # Reemplazar valores hardcodeados comunes
-        reemplazos['2.000.000'] = sf1_formateado
-        reemplazos['$2.000.000'] = sf1_formateado
-        reemplazos['$ 2.000.000'] = sf1_formateado
-        reemplazos['4.000.000'] = sf1_formateado
-        reemplazos['$4.000.000'] = sf1_formateado
-        reemplazos['$ 4.000.000'] = sf1_formateado
         
         # Días trabajados
         dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
@@ -1254,12 +1233,11 @@ def generate_cuenta_cobro():
         reemplazos['{{bs1}}'] = bs1_formateado
         reemplazos['[bs1]'] = bs1_formateado
         reemplazos['<<bs1>>'] = bs1_formateado
-        # Reemplazar valores hardcodeados comunes
-        reemplazos['200.000'] = bs1_formateado
-        reemplazos['$200.000'] = bs1_formateado
-        reemplazos['$ 200.000'] = bs1_formateado
-        reemplazos['2.000.000'] = bs1_formateado  # Limpiar valores incorrectos del template
-        reemplazos['$2.000.000'] = bs1_formateado
+        # Reemplazar "sb1" que aparece en el template (error de escritura)
+        reemplazos['sb1'] = bs1_formateado
+        reemplazos['SB1'] = bs1_formateado
+        reemplazos['{sb1}'] = bs1_formateado
+        reemplazos['{{sb1}}'] = bs1_formateado
         
         # Variable ad1: Adicionales
         reemplazos['ad1'] = ad1_formateado
@@ -1268,10 +1246,6 @@ def generate_cuenta_cobro():
         reemplazos['{{ad1}}'] = ad1_formateado
         reemplazos['[ad1]'] = ad1_formateado
         reemplazos['<<ad1>>'] = ad1_formateado
-        # Reemplazar valores hardcodeados comunes
-        reemplazos['240.000'] = ad1_formateado
-        reemplazos['$240.000'] = ad1_formateado
-        reemplazos['$ 240.000'] = ad1_formateado
         # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
         
         # Variable ax1: Auxilio de transporte
