@@ -991,7 +991,6 @@ def generate_cuenta_cobro():
             sueldo_proporcional = round(valor_por_dia * dias_num)
         
         # Validar y sanitizar valores monetarios y otros campos
-        bono_seguridad = str(validate_numeric(data.get('bonoSeguridad', '0'), min_val=0, max_val=10000000))
         turnos_descansos = str(int(validate_numeric(data.get('turnosDescansos', '0'), min_val=0, max_val=100, default=0)))
         paciente = sanitize_input(data.get('paciente', '') or data.get('patientName', ''), max_length=200)
         cuenta_bancaria = sanitize_input(data.get('cuentaBancaria', '') or data.get('bankAccount', ''), max_length=50)
@@ -1000,28 +999,39 @@ def generate_cuenta_cobro():
         if tipo_cuenta_cobro not in ['12h', '8h']:
             tipo_cuenta_cobro = '12h'
         tiene_auxilio_transporte = bool(data.get('tieneAuxilioTransporte', False))
-        auxilio_transporte = str(validate_numeric(data.get('auxilioTransporte', '0'), min_val=0, max_val=10000000))
         
-        # Parsear bono de seguridad
+        # Parsear bono de seguridad CORRECTAMENTE
         bono_seguridad_num = 0
         try:
-            if bono_seguridad:
-                bono_limpio = str(bono_seguridad).replace('.', '').replace(',', '.')
+            bono_raw = data.get('bonoSeguridad', '0')
+            if bono_raw:
+                # Convertir a string y limpiar
+                bono_str = str(bono_raw).strip()
+                # Remover puntos (separadores de miles) y reemplazar coma por punto (decimal)
+                bono_limpio = bono_str.replace('.', '').replace(',', '.')
                 bono_seguridad_num = float(bono_limpio)
+                # Validar rango
                 if bono_seguridad_num < 0:
                     bono_seguridad_num = 0
-        except (ValueError, TypeError):
+                if bono_seguridad_num > 10000000:
+                    bono_seguridad_num = 10000000
+        except (ValueError, TypeError, AttributeError):
             bono_seguridad_num = 0
         
         # Parsear auxilio de transporte
         auxilio_transporte_num = 0
-        if tiene_auxilio_transporte and auxilio_transporte:
+        if tiene_auxilio_transporte:
             try:
-                auxilio_limpio = str(auxilio_transporte).replace('.', '').replace(',', '.')
-                auxilio_transporte_num = float(auxilio_limpio)
-                if auxilio_transporte_num < 0:
-                    auxilio_transporte_num = 0
-            except (ValueError, TypeError):
+                auxilio_raw = data.get('auxilioTransporte', '0')
+                if auxilio_raw:
+                    auxilio_str = str(auxilio_raw).strip()
+                    auxilio_limpio = auxilio_str.replace('.', '').replace(',', '.')
+                    auxilio_transporte_num = float(auxilio_limpio)
+                    if auxilio_transporte_num < 0:
+                        auxilio_transporte_num = 0
+                    if auxilio_transporte_num > 10000000:
+                        auxilio_transporte_num = 10000000
+            except (ValueError, TypeError, AttributeError):
                 auxilio_transporte_num = 0
         
         # Calcular adicionales (turnos * 60000)
@@ -1226,18 +1236,26 @@ def generate_cuenta_cobro():
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         
-        # Variable bs1: Bono de seguridad
+        # Variable bs1/sb1: Bono de seguridad (200.000)
+        # Variable principal: bs1
         reemplazos['bs1'] = bs1_formateado
         reemplazos['BS1'] = bs1_formateado
         reemplazos['{bs1}'] = bs1_formateado
         reemplazos['{{bs1}}'] = bs1_formateado
         reemplazos['[bs1]'] = bs1_formateado
         reemplazos['<<bs1>>'] = bs1_formateado
-        # Reemplazar "sb1" que aparece en el template (error de escritura)
+        # Variable alternativa: sb1 (usada en el template)
         reemplazos['sb1'] = bs1_formateado
         reemplazos['SB1'] = bs1_formateado
         reemplazos['{sb1}'] = bs1_formateado
         reemplazos['{{sb1}}'] = bs1_formateado
+        reemplazos['[sb1]'] = bs1_formateado
+        reemplazos['<<sb1>>'] = bs1_formateado
+        # Variaciones con espacios
+        reemplazos[' sb1 '] = bs1_formateado
+        reemplazos[' SB1 '] = bs1_formateado
+        reemplazos['sb1 '] = bs1_formateado
+        reemplazos[' sb1'] = bs1_formateado
         
         # Variable ad1: Adicionales
         reemplazos['ad1'] = ad1_formateado
