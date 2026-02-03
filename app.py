@@ -1321,6 +1321,7 @@ def generate_cuenta_cobro():
             # NO reemplazar "DESCANSOS" ni "TURNOS" - deben mantenerse como texto descriptivo
         
         # Auxilio de transporte
+        auxilio_formateado = ''
         if tiene_auxilio_transporte and auxilio_transporte_num > 0:
             auxilio_formateado = formatear_monto(auxilio_transporte_num, incluir_signo=False)
             reemplazos['auxilioTransporte'] = auxilio_formateado
@@ -1469,21 +1470,73 @@ def generate_cuenta_cobro():
         
         print("✅ Limpieza de duplicaciones completada")
         
-        # Si no hay turnos de descansos, limpiar solo los valores pero mantener "DESCANSOS" como texto
-        if turnos_num == 0:
-            # Buscar tablas y limpiar solo los valores (columna VALOR) pero mantener "DESCANSOS" en la descripción
-            for table in doc.tables:
-                for row in table.rows:
-                    row_text = ' '.join([cell.text for cell in row.cells])
-                    # Si la fila contiene "DESCANSOS" pero no tiene valores de sueldo o bono
-                    if 'DESCANSOS' in row_text.upper() and 'SUELDO FIJO' not in row_text.upper() and 'BONO' not in row_text.upper():
-                        # Limpiar solo las celdas de cantidad y valor, pero mantener "DESCANSOS" en la primera columna
-                        for idx, cell in enumerate(row.cells):
-                            # Si no es la primera columna (donde está "DESCANSOS"), limpiar
-                            if idx > 0:
-                                for paragraph in cell.paragraphs:
-                                    paragraph.clear()
-                                    paragraph.add_run('')
+        # Procesar tablas: eliminar fila de ADICIONALES si no hay turnos, agregar AUXILIO DE TRANSPORTE si está seleccionado
+        for table in doc.tables:
+            filas_a_eliminar = []
+            indice_adicionales = -1
+            indice_ultima_fila_datos = -1
+            
+            # Buscar la fila de ADICIONALES y la última fila de datos (antes del TOTAL)
+            for idx, row in enumerate(table.rows):
+                row_text = ' '.join([cell.text.strip() for cell in row.cells]).upper()
+                
+                # Buscar fila de ADICIONALES
+                if 'ADICIONALES' in row_text and 'SUELDO FIJO' not in row_text and 'BONO' not in row_text:
+                    indice_adicionales = idx
+                
+                # Buscar última fila de datos (antes del TOTAL)
+                if 'TOTAL' not in row_text and 'SUELDO FIJO' in row_text or 'BONO' in row_text or 'ADICIONALES' in row_text:
+                    indice_ultima_fila_datos = idx
+            
+            # Eliminar fila de ADICIONALES si no hay turnos
+            if turnos_num == 0 and indice_adicionales >= 0:
+                filas_a_eliminar.append(indice_adicionales)
+                print(f"🗑️ Eliminando fila de ADICIONALES (índice {indice_adicionales}) - no hay turnos")
+            
+            # Eliminar filas en orden inverso para mantener los índices correctos
+            for idx in sorted(filas_a_eliminar, reverse=True):
+                if idx < len(table.rows):
+                    table._element.remove(table.rows[idx]._element)
+            
+            # Agregar fila de AUXILIO DE TRANSPORTE si está seleccionado
+            if tiene_auxilio_transporte and auxilio_transporte_num > 0:
+                # Buscar la fila del TOTAL para insertar antes de ella
+                indice_total = -1
+                for idx, row in enumerate(table.rows):
+                    row_text = ' '.join([cell.text.strip() for cell in row.cells]).upper()
+                    if 'TOTAL' in row_text:
+                        indice_total = idx
+                        break
+                
+                # Si no se encuentra TOTAL, usar el final de la tabla
+                if indice_total < 0:
+                    indice_total = len(table.rows)
+                
+                # Crear nueva fila al final primero
+                nueva_fila = table.add_row()
+                
+                # Llenar las celdas de la nueva fila
+                if len(nueva_fila.cells) >= 4:
+                    # Columna 1: Descripción
+                    nueva_fila.cells[0].text = 'AUXILIO DE TRANSPORTE'
+                    # Columna 2: Cantidad
+                    nueva_fila.cells[1].text = 'MES COMPLETO'
+                    # Columna 3: Valor
+                    nueva_fila.cells[2].text = auxilio_formateado
+                    # Columna 4: Paciente (vacía)
+                    nueva_fila.cells[3].text = ''
+                
+                # Mover la fila a la posición correcta (antes del TOTAL)
+                if indice_total < len(table.rows) - 1:
+                    nueva_fila_element = nueva_fila._element
+                    tbl = table._element
+                    # Remover de la posición actual
+                    tbl.remove(nueva_fila_element)
+                    # Insertar antes del TOTAL
+                    fila_total = table.rows[indice_total]._element
+                    fila_total.addprevious(nueva_fila_element)
+                
+                print(f"✅ Agregada fila de AUXILIO DE TRANSPORTE con valor {auxilio_formateado}")
         
         # Guardar en memoria
         output = io.BytesIO()
