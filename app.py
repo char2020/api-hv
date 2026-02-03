@@ -1029,14 +1029,7 @@ def generate_cuenta_cobro():
         valor_por_turno = 60000
         adicionales_valor = turnos_num * valor_por_turno
         
-        # Calcular total correctamente: sf1 + bs1 + ad1 + ax1
-        # sf1 = sueldo_proporcional
-        # bs1 = bono_seguridad_num
-        # ad1 = adicionales_valor
-        # ax1 = auxilio_transporte_num
-        total = sueldo_proporcional + bono_seguridad_num + adicionales_valor + auxilio_transporte_num
-        # Asegurar que el total sea un número entero
-        total = round(total)
+        # El total se calculará después de formatear los valores
         
         # Formatear fecha (mes en texto)
         fecha_texto = ''
@@ -1060,21 +1053,32 @@ def generate_cuenta_cobro():
         # Buscar todas las variaciones posibles de las variables
         reemplazos = {}
         
-        # Formatear bono seguridad (sin $ para evitar duplicaciones)
-        bono_seguridad_formateado = formatear_monto(bono_seguridad_num, incluir_signo=False) if bono_seguridad_num > 0 else ''
+        # ============================================
+        # FORMATEO DE VALORES - CÓDIGO NUEVO DESDE CERO
+        # ============================================
         
-        # Calcular sueldo fijo + bono de seguridad (valor que se muestra en la fila de SUELDO FIJO)
-        sueldo_fijo_con_bono = sueldo_fijo_num + bono_seguridad_num
-        sueldo_fijo_formateado = formatear_monto(sueldo_fijo_con_bono, incluir_signo=False)
+        # Variable sf1: Sueldo proporcional según días trabajados
+        # Ejemplo: sueldo fijo 2.000.000, enero 31 días = 2.000.000, febrero 28 días = 2.000.000
+        sf1_valor = sueldo_proporcional
+        sf1_formateado = formatear_monto(sf1_valor, incluir_signo=False)
         
-        # Formatear sueldo proporcional (sin $ para evitar duplicaciones)
-        sueldo_proporcional_formateado = formatear_monto(sueldo_proporcional, incluir_signo=False)
+        # Variable bs1: Bono de seguridad
+        # Ejemplo: 200.000
+        bs1_valor = bono_seguridad_num
+        bs1_formateado = formatear_monto(bs1_valor, incluir_signo=False) if bs1_valor > 0 else ''
         
-        # Formatear adicionales (sin $ para evitar duplicaciones)
-        adicionales_formateado = formatear_monto(adicionales_valor, incluir_signo=False) if turnos_num > 0 else ''
+        # Variable ad1: Adicionales (turnos de descansos)
+        # Ejemplo: 4 turnos * 60.000 = 240.000
+        ad1_valor = adicionales_valor
+        ad1_formateado = formatear_monto(ad1_valor, incluir_signo=False) if ad1_valor > 0 else ''
         
-        # Formatear total (sin $ para evitar duplicaciones)
-        total_formateado = formatear_monto(total, incluir_signo=False)
+        # Variable ax1: Auxilio de transporte
+        ax1_valor = auxilio_transporte_num
+        ax1_formateado = formatear_monto(ax1_valor, incluir_signo=False) if ax1_valor > 0 else ''
+        
+        # Calcular TOTAL: sf1 + bs1 + ad1 + ax1
+        total_calculado = sf1_valor + bs1_valor + ad1_valor + ax1_valor
+        total_formateado = formatear_monto(total_calculado, incluir_signo=False)
         
         # Nombre - múltiples variaciones
         reemplazos['Name1'] = nombre.upper()
@@ -1175,39 +1179,20 @@ def generate_cuenta_cobro():
         reemplazos['[paciente1]'] = paciente_valor
         reemplazos['<<paciente1>>'] = paciente_valor
         
-        # Sueldo fijo mensual - SOLO placeholders específicos, NO texto descriptivo
-        # NO reemplazar "SUELDO FIJO MENSUAL" - es texto descriptivo que debe mantenerse
-        # El valor mostrado es sueldo_fijo + bono_seguridad
-        reemplazos['sueldoFijoMensual'] = sueldo_fijo_formateado
-        reemplazos['sueldoFijo1'] = sueldo_fijo_formateado
-        reemplazos['SUELDOFIJO1'] = sueldo_fijo_formateado
-        reemplazos['{sueldoFijo}'] = sueldo_fijo_formateado
-        reemplazos['{{sueldoFijo}}'] = sueldo_fijo_formateado
-        reemplazos['[sueldoFijo]'] = sueldo_fijo_formateado
-        reemplazos['<<sueldoFijo>>'] = sueldo_fijo_formateado
-        # Reemplazar valores hardcodeados comunes en la columna VALOR
-        reemplazos['2.000.000'] = sueldo_fijo_formateado
-        reemplazos['$2.000.000'] = sueldo_fijo_formateado
-        reemplazos['$ 2.000.000'] = sueldo_fijo_formateado
-        reemplazos['$$2.000.000'] = sueldo_fijo_formateado
-        reemplazos['4.000.000'] = sueldo_fijo_formateado
-        reemplazos['$4.000.000'] = sueldo_fijo_formateado
-        reemplazos['$ 4.000.000'] = sueldo_fijo_formateado
-        reemplazos['$$4.000.000'] = sueldo_fijo_formateado
-        
-        # Sueldo proporcional - Variable sf1 (valor según días trabajados)
-        # Ejemplo: enero 31 días = 2 millones, febrero 28 días = 2 millones
-        reemplazos['sf1'] = sueldo_proporcional_formateado
-        reemplazos['SF1'] = sueldo_proporcional_formateado
-        reemplazos['{sf1}'] = sueldo_proporcional_formateado
-        reemplazos['{{sf1}}'] = sueldo_proporcional_formateado
-        reemplazos['[sf1]'] = sueldo_proporcional_formateado
-        reemplazos['<<sf1>>'] = sueldo_proporcional_formateado
-        # Mantener compatibilidad con variables antiguas
-        reemplazos['sueldo1'] = sueldo_proporcional_formateado
-        reemplazos['SUELDO1'] = sueldo_proporcional_formateado
-        reemplazos['{sueldo1}'] = sueldo_proporcional_formateado
-        reemplazos['sueldoProporcional'] = sueldo_proporcional_formateado
+        # Variable sf1: Sueldo proporcional (NO incluye bono)
+        reemplazos['sf1'] = sf1_formateado
+        reemplazos['SF1'] = sf1_formateado
+        reemplazos['{sf1}'] = sf1_formateado
+        reemplazos['{{sf1}}'] = sf1_formateado
+        reemplazos['[sf1]'] = sf1_formateado
+        reemplazos['<<sf1>>'] = sf1_formateado
+        # Reemplazar valores hardcodeados comunes
+        reemplazos['2.000.000'] = sf1_formateado
+        reemplazos['$2.000.000'] = sf1_formateado
+        reemplazos['$ 2.000.000'] = sf1_formateado
+        reemplazos['4.000.000'] = sf1_formateado
+        reemplazos['$4.000.000'] = sf1_formateado
+        reemplazos['$ 4.000.000'] = sf1_formateado
         
         # Días trabajados
         dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
@@ -1262,93 +1247,40 @@ def generate_cuenta_cobro():
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         
-        # Bono seguridad - Variable bs1 ($200.000)
-        if bono_seguridad_formateado:
-            reemplazos['bs1'] = bono_seguridad_formateado
-            reemplazos['BS1'] = bono_seguridad_formateado
-            reemplazos['{bs1}'] = bono_seguridad_formateado
-            reemplazos['{{bs1}}'] = bono_seguridad_formateado
-            reemplazos['[bs1]'] = bono_seguridad_formateado
-            reemplazos['<<bs1>>'] = bono_seguridad_formateado
-            # Mantener compatibilidad con variables antiguas
-            reemplazos['bono1'] = bono_seguridad_formateado
-            reemplazos['BONO1'] = bono_seguridad_formateado
-            reemplazos['{bono1}'] = bono_seguridad_formateado
-            reemplazos['bonoSeguridad'] = bono_seguridad_formateado
-            # Reemplazar valores hardcodeados comunes en la columna VALOR
-            reemplazos['200.000'] = bono_seguridad_formateado
-            reemplazos['$200.000'] = bono_seguridad_formateado
-            reemplazos['$ 200.000'] = bono_seguridad_formateado
-            reemplazos['$$200.000'] = bono_seguridad_formateado
-        else:
-            # Si no hay bono, limpiar valores
-            reemplazos['bs1'] = ''
-            reemplazos['BS1'] = ''
-            reemplazos['{bs1}'] = ''
-            reemplazos['200.000'] = ''
-            reemplazos['$200.000'] = ''
-            reemplazos['$ 200.000'] = ''
+        # Variable bs1: Bono de seguridad
+        reemplazos['bs1'] = bs1_formateado
+        reemplazos['BS1'] = bs1_formateado
+        reemplazos['{bs1}'] = bs1_formateado
+        reemplazos['{{bs1}}'] = bs1_formateado
+        reemplazos['[bs1]'] = bs1_formateado
+        reemplazos['<<bs1>>'] = bs1_formateado
+        # Reemplazar valores hardcodeados comunes
+        reemplazos['200.000'] = bs1_formateado
+        reemplazos['$200.000'] = bs1_formateado
+        reemplazos['$ 200.000'] = bs1_formateado
+        reemplazos['2.000.000'] = bs1_formateado  # Limpiar valores incorrectos del template
+        reemplazos['$2.000.000'] = bs1_formateado
         
-        # Adicionales - Variable ad1 ($240.000)
-        if turnos_num > 0:
-            adicionales_texto_turnos = f"{turnos_num} TURNOS"
-            # Variable ad1 para adicionales
-            reemplazos['ad1'] = adicionales_formateado
-            reemplazos['AD1'] = adicionales_formateado
-            reemplazos['{ad1}'] = adicionales_formateado
-            reemplazos['{{ad1}}'] = adicionales_formateado
-            reemplazos['[ad1]'] = adicionales_formateado
-            reemplazos['<<ad1>>'] = adicionales_formateado
-            # Mantener compatibilidad con variables antiguas
-            reemplazos['adicionales1'] = adicionales_formateado
-            reemplazos['ADICIONALES1'] = adicionales_formateado
-            reemplazos['{adicionales1}'] = adicionales_formateado
-            # Reemplazar valores hardcodeados comunes
-            reemplazos['240.000'] = adicionales_formateado
-            reemplazos['$240.000'] = adicionales_formateado
-            reemplazos['$ 240.000'] = adicionales_formateado
-            reemplazos['$$240.000'] = adicionales_formateado
-            # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
-            # NO reemplazar "DESCANSOS" - es el texto de descripción que debe mantenerse
-        else:
-            # Si no hay turnos, dejar vacío los valores
-            reemplazos['ad1'] = ''
-            reemplazos['AD1'] = ''
-            reemplazos['{ad1}'] = ''
-            reemplazos['240.000'] = ''
-            reemplazos['$240.000'] = ''
-            reemplazos['$ 240.000'] = ''
-            # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
-            # NO reemplazar "DESCANSOS" ni "TURNOS" - deben mantenerse como texto descriptivo
+        # Variable ad1: Adicionales
+        reemplazos['ad1'] = ad1_formateado
+        reemplazos['AD1'] = ad1_formateado
+        reemplazos['{ad1}'] = ad1_formateado
+        reemplazos['{{ad1}}'] = ad1_formateado
+        reemplazos['[ad1]'] = ad1_formateado
+        reemplazos['<<ad1>>'] = ad1_formateado
+        # Reemplazar valores hardcodeados comunes
+        reemplazos['240.000'] = ad1_formateado
+        reemplazos['$240.000'] = ad1_formateado
+        reemplazos['$ 240.000'] = ad1_formateado
+        # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
         
-        # Auxilio de transporte - Variable ax1
-        auxilio_formateado = ''
-        if tiene_auxilio_transporte and auxilio_transporte_num > 0:
-            auxilio_formateado = formatear_monto(auxilio_transporte_num, incluir_signo=False)
-            # Variable ax1 para auxilio de transporte
-            reemplazos['ax1'] = auxilio_formateado
-            reemplazos['AX1'] = auxilio_formateado
-            reemplazos['{ax1}'] = auxilio_formateado
-            reemplazos['{{ax1}}'] = auxilio_formateado
-            reemplazos['[ax1]'] = auxilio_formateado
-            reemplazos['<<ax1>>'] = auxilio_formateado
-            # Mantener compatibilidad con variables antiguas
-            reemplazos['auxilioTransporte'] = auxilio_formateado
-            reemplazos['AUXILIO TRANSPORTE'] = auxilio_formateado
-            reemplazos['auxilio1'] = auxilio_formateado
-            reemplazos['AUXILIO1'] = auxilio_formateado
-            reemplazos['{auxilio1}'] = auxilio_formateado
-            reemplazos['{{auxilio1}}'] = auxilio_formateado
-            reemplazos['[auxilio1]'] = auxilio_formateado
-            reemplazos['<<auxilio1>>'] = auxilio_formateado
-        else:
-            reemplazos['ax1'] = ''
-            reemplazos['AX1'] = ''
-            reemplazos['{ax1}'] = ''
-            reemplazos['auxilioTransporte'] = ''
-            reemplazos['AUXILIO TRANSPORTE'] = ''
-            reemplazos['auxilio1'] = ''
-            reemplazos['AUXILIO1'] = ''
+        # Variable ax1: Auxilio de transporte
+        reemplazos['ax1'] = ax1_formateado
+        reemplazos['AX1'] = ax1_formateado
+        reemplazos['{ax1}'] = ax1_formateado
+        reemplazos['{{ax1}}'] = ax1_formateado
+        reemplazos['[ax1]'] = ax1_formateado
+        reemplazos['<<ax1>>'] = ax1_formateado
         
         # Limpiar duplicaciones de texto comunes ANTES de reemplazar
         # Duplicaciones de año - múltiples variaciones (ordenar por longitud descendente)
@@ -1534,7 +1466,7 @@ def generate_cuenta_cobro():
                     # Columna 2: Cantidad
                     nueva_fila.cells[1].text = 'MES COMPLETO'
                     # Columna 3: Valor
-                    nueva_fila.cells[2].text = auxilio_formateado
+                    nueva_fila.cells[2].text = ax1_formateado
                     # Columna 4: Paciente (vacía)
                     nueva_fila.cells[3].text = ''
                 
@@ -1548,7 +1480,7 @@ def generate_cuenta_cobro():
                     fila_total = table.rows[indice_total]._element
                     fila_total.addprevious(nueva_fila_element)
                 
-                print(f"✅ Agregada fila de AUXILIO DE TRANSPORTE con valor {auxilio_formateado}")
+                print(f"✅ Agregada fila de AUXILIO DE TRANSPORTE con valor {ax1_formateado}")
         
         # Guardar en memoria
         output = io.BytesIO()
