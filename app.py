@@ -1029,11 +1029,12 @@ def generate_cuenta_cobro():
         valor_por_turno = 60000
         adicionales_valor = turnos_num * valor_por_turno
         
-        # Calcular sueldo proporcional con bono (el bono es fijo mensual, no proporcional)
-        sueldo_proporcional_con_bono = sueldo_proporcional + bono_seguridad_num
-        
-        # Calcular total correctamente
-        total = sueldo_proporcional_con_bono + adicionales_valor + auxilio_transporte_num
+        # Calcular total correctamente: sf1 + bs1 + ad1 + ax1
+        # sf1 = sueldo_proporcional
+        # bs1 = bono_seguridad_num
+        # ad1 = adicionales_valor
+        # ax1 = auxilio_transporte_num
+        total = sueldo_proporcional + bono_seguridad_num + adicionales_valor + auxilio_transporte_num
         # Asegurar que el total sea un número entero
         total = round(total)
         
@@ -1320,10 +1321,18 @@ def generate_cuenta_cobro():
             # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
             # NO reemplazar "DESCANSOS" ni "TURNOS" - deben mantenerse como texto descriptivo
         
-        # Auxilio de transporte
+        # Auxilio de transporte - Variable ax1
         auxilio_formateado = ''
         if tiene_auxilio_transporte and auxilio_transporte_num > 0:
             auxilio_formateado = formatear_monto(auxilio_transporte_num, incluir_signo=False)
+            # Variable ax1 para auxilio de transporte
+            reemplazos['ax1'] = auxilio_formateado
+            reemplazos['AX1'] = auxilio_formateado
+            reemplazos['{ax1}'] = auxilio_formateado
+            reemplazos['{{ax1}}'] = auxilio_formateado
+            reemplazos['[ax1]'] = auxilio_formateado
+            reemplazos['<<ax1>>'] = auxilio_formateado
+            # Mantener compatibilidad con variables antiguas
             reemplazos['auxilioTransporte'] = auxilio_formateado
             reemplazos['AUXILIO TRANSPORTE'] = auxilio_formateado
             reemplazos['auxilio1'] = auxilio_formateado
@@ -1333,6 +1342,9 @@ def generate_cuenta_cobro():
             reemplazos['[auxilio1]'] = auxilio_formateado
             reemplazos['<<auxilio1>>'] = auxilio_formateado
         else:
+            reemplazos['ax1'] = ''
+            reemplazos['AX1'] = ''
+            reemplazos['{ax1}'] = ''
             reemplazos['auxilioTransporte'] = ''
             reemplazos['AUXILIO TRANSPORTE'] = ''
             reemplazos['auxilio1'] = ''
