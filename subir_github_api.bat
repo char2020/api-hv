@@ -58,7 +58,7 @@ git remote add origin https://%GITHUB_TOKEN%@github.com/%GITHUB_USER%/%GITHUB_RE
 echo.
 echo 📋 Agregando archivos de la API a Git...
 REM Agregar archivos principales de la API
-git add app.py requirements.txt render.yaml README.md .gitignore templates/hv.docx templates/cobro_*.docx ANALISIS-DATOS.md
+git add app.py requirements.txt render.yaml README.md .gitignore templates/hv.docx templates/cobro_*.docx templates/contrato*.docx ANALISIS-DATOS.md
 
 REM Verificar si hay cambios para subir
 git diff --cached --quiet
