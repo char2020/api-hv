@@ -12,6 +12,11 @@ import base64
 import requests
 import time
 from datetime import datetime
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.errors import HttpError
 
 app = Flask(__name__)
 # CORS con restricciones de seguridad - solo permitir orígenes específicos
@@ -1704,6 +1709,213 @@ def generate_contrato_arrendamiento():
     except Exception as e:
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+# Google Drive API Configuration
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '')  # ID de la carpeta raíz en Google Drive
+
+def get_google_drive_service():
+    """Obtiene el servicio de Google Drive usando credenciales"""
+    try:
+        # Intentar cargar credenciales desde variable de entorno (token JSON)
+        creds_json = os.getenv('GOOGLE_DRIVE_CREDENTIALS', None)
+        if creds_json:
+            import json
+            creds_dict = json.loads(creds_json)
+            creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
+        else:
+            # Intentar cargar desde archivo token.json
+            token_path = os.path.join(os.path.dirname(__file__), 'token.json')
+            if os.path.exists(token_path):
+                creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+            else:
+                # Si no hay credenciales, retornar None (se manejará en el endpoint)
+                return None
+        
+        # Si las credenciales están expiradas, intentar refrescar
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                creds.refresh(requests.Request())
+        
+        service = build('drive', 'v3', credentials=creds)
+        return service
+    except Exception as e:
+        print(f'Error obteniendo servicio de Google Drive: {e}')
+        return None
+
+def create_or_get_folder(service, folder_name, parent_folder_id=None):
+    """Crea una carpeta en Google Drive o retorna su ID si ya existe"""
+    try:
+        # Buscar si la carpeta ya existe
+        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        if parent_folder_id:
+            query += f" and '{parent_folder_id}' in parents"
+        else:
+            query += " and 'root' in parents"
+        
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        items = results.get('files', [])
+        
+        if items:
+            return items[0]['id']
+        
+        # Si no existe, crear la carpeta
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        if parent_folder_id:
+            file_metadata['parents'] = [parent_folder_id]
+        
+        folder = service.files().create(body=file_metadata, fields='id').execute()
+        return folder.get('id')
+    except Exception as e:
+        print(f'Error creando/obteniendo carpeta: {e}')
+        return None
+
+def upload_file_to_drive(service, file_data, file_name, folder_id):
+    """Sube un archivo a Google Drive en la carpeta especificada"""
+    try:
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id]
+        }
+        
+        # Convertir base64 a bytes si es necesario
+        if isinstance(file_data, str):
+            if file_data.startswith('data:'):
+                # Es un data URL, extraer el base64
+                header, encoded = file_data.split(',', 1)
+                file_bytes = base64.b64decode(encoded)
+            else:
+                # Es base64 directo
+                file_bytes = base64.b64decode(file_data)
+        else:
+            file_bytes = file_data
+        
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='application/pdf', resumable=True)
+        
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink'
+        ).execute()
+        
+        return {
+            'file_id': file.get('id'),
+            'web_link': file.get('webViewLink'),
+            'name': file_name
+        }
+    except Exception as e:
+        print(f'Error subiendo archivo a Google Drive: {e}')
+        return None
+
+@app.route('/upload-attachments-to-drive', methods=['POST'])
+def upload_attachments_to_drive():
+    """Sube anexos a Google Drive organizados por cliente"""
+    try:
+        if not request.json:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+        
+        data = request.json
+        
+        # Obtener datos del cliente
+        client_name = data.get('clientName', '').strip()
+        client_id = data.get('clientId', '').strip()  # Cédula o ID
+        attachments = data.get('attachments', {})  # Diccionario de anexos
+        
+        if not client_name or not client_id:
+            return jsonify({'error': 'Se requiere nombre del cliente e ID (cédula)'}), 400
+        
+        if not attachments:
+            return jsonify({'error': 'No se proporcionaron anexos para subir'}), 400
+        
+        # Obtener servicio de Google Drive
+        service = get_google_drive_service()
+        if not service:
+            return jsonify({'error': 'No se pudo conectar con Google Drive. Verifica las credenciales.'}), 500
+        
+        # Crear nombre de carpeta: nombre_cliente_cedula
+        folder_name = f"{client_name}_{client_id}".replace(' ', '_').replace('/', '_')
+        
+        # Crear o obtener carpeta del cliente
+        parent_folder_id = GOOGLE_DRIVE_FOLDER_ID if GOOGLE_DRIVE_FOLDER_ID else None
+        client_folder_id = create_or_get_folder(service, folder_name, parent_folder_id)
+        
+        if not client_folder_id:
+            return jsonify({'error': 'No se pudo crear la carpeta del cliente en Google Drive'}), 500
+        
+        # Mapeo de IDs de anexos a nombres descriptivos
+        attachment_names = {
+            'cedula': 'Cedula',
+            'actaBachiller': 'Acta_Bachiller',
+            'diplomaBachiller': 'Diploma_Bachiller',
+            'actaOtro': 'Acta_Otro_Estudio',
+            'diplomaOtro': 'Diploma_Otro_Estudio',
+            'cursos': 'Cursos',
+            'antecedentes': 'Antecedentes',
+            'rut': 'RUT',
+            'pension': 'Certificado_Pension',
+            'eps': 'Certificado_EPS',
+            'vacunas': 'Vacunas',
+            'arl': 'Certificado_ARL',
+            'otros': 'Otros_Documentos'
+        }
+        
+        uploaded_files = []
+        errors = []
+        
+        # Subir cada anexo
+        for attachment_key, attachment_data in attachments.items():
+            try:
+                if not attachment_data or not attachment_data.get('dataUrl'):
+                    continue
+                
+                # Obtener nombre descriptivo del anexo
+                attachment_name = attachment_names.get(attachment_key, attachment_key)
+                
+                # Obtener extensión del archivo original
+                original_name = attachment_data.get('name', 'documento')
+                file_extension = os.path.splitext(original_name)[1] or '.pdf'
+                
+                # Crear nombre del archivo: nombre_anexo.extensión
+                file_name = f"{attachment_name}{file_extension}"
+                
+                # Subir archivo
+                result = upload_file_to_drive(
+                    service,
+                    attachment_data['dataUrl'],
+                    file_name,
+                    client_folder_id
+                )
+                
+                if result:
+                    uploaded_files.append({
+                        'key': attachment_key,
+                        'name': file_name,
+                        'file_id': result['file_id'],
+                        'web_link': result.get('web_link', '')
+                    })
+                else:
+                    errors.append(f"Error subiendo {attachment_key}")
+            except Exception as e:
+                errors.append(f"Error procesando {attachment_key}: {str(e)}")
+        
+        return jsonify({
+            'success': True,
+            'folder_name': folder_name,
+            'folder_id': client_folder_id,
+            'uploaded_files': uploaded_files,
+            'errors': errors,
+            'message': f'Se subieron {len(uploaded_files)} archivo(s) a Google Drive'
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 if __name__ == '__main__':
     # Crear directorio de templates si no existe
