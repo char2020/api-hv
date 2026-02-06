@@ -307,7 +307,7 @@ def generate_word():
         telefono = data.get('phone', '').strip()
         direccion = data.get('address', '').strip()
         ciudad = data.get('place', '').strip()
-        estado_civil = data.get('estadoCivil', '').strip()
+        estado_civil = data.get('estadoCivil', '').strip().upper()  # Convertir a mayúsculas
         correo = data.get('email', '').strip()
         exp = data.get('idIssuePlace', '').strip()
         texto_perfil = data.get('profile', '').strip()
