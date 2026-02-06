@@ -12,11 +12,21 @@ import base64
 import requests
 import time
 from datetime import datetime
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-from googleapiclient.errors import HttpError
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+    from googleapiclient.errors import HttpError
+    GOOGLE_DRIVE_AVAILABLE = True
+except ImportError:
+    GOOGLE_DRIVE_AVAILABLE = False
+    # Placeholder classes para evitar errores si las dependencias no están instaladas
+    Credentials = None
+    InstalledAppFlow = None
+    build = None
+    MediaIoBaseUpload = None
+    HttpError = Exception
 
 app = Flask(__name__)
 # CORS con restricciones de seguridad - solo permitir orígenes específicos
@@ -1813,6 +1823,9 @@ def upload_file_to_drive(service, file_data, file_name, folder_id):
 @app.route('/upload-attachments-to-drive', methods=['POST'])
 def upload_attachments_to_drive():
     """Sube anexos a Google Drive organizados por cliente"""
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return jsonify({'error': 'Google Drive API no está disponible. Instala las dependencias: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib'}), 503
+    
     try:
         if not request.json:
             return jsonify({'error': 'No se recibieron datos'}), 400
