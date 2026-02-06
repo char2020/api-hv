@@ -1494,6 +1494,217 @@ def generate_cuenta_cobro():
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
+@app.route('/generate-contrato-arrendamiento', methods=['POST'])
+def generate_contrato_arrendamiento():
+    """Genera un contrato de arrendamiento de predio rural usando el template Word"""
+    try:
+        if not request.json:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+        
+        data = request.json
+        
+        # Validar y sanitizar datos del formulario
+        nombre_arrendador = sanitize_input(data.get('nombreArrendador', ''), max_length=200)
+        if not nombre_arrendador:
+            return jsonify({'error': 'El nombre del arrendador es obligatorio'}), 400
+        
+        cedula_arrendador = sanitize_input(data.get('cedulaArrendador', ''), max_length=50)
+        if not cedula_arrendador:
+            return jsonify({'error': 'La cédula del arrendador es obligatoria'}), 400
+        
+        ciudad_expedicion_arrendador = sanitize_input(data.get('ciudadExpedicionArrendador', ''), max_length=100)
+        nombre_arrendatario = sanitize_input(data.get('nombreArrendatario', ''), max_length=200)
+        cedula_arrendatario = sanitize_input(data.get('cedulaArrendatario', ''), max_length=50)
+        ciudad_expedicion_arrendatario = sanitize_input(data.get('ciudadExpedicionArrendatario', ''), max_length=100)
+        nombre_predio = sanitize_input(data.get('nombrePredio', ''), max_length=200)
+        nombre_vereda = sanitize_input(data.get('nombreVereda', ''), max_length=200)
+        municipio = sanitize_input(data.get('municipio', ''), max_length=100)
+        departamento = sanitize_input(data.get('departamento', ''), max_length=100)
+        direccion_referencia = sanitize_input(data.get('direccionReferencia', ''), max_length=500)
+        hectareas_arrendadas = sanitize_input(data.get('hectareasArrendadas', ''), max_length=50)
+        hectareas_totales = sanitize_input(data.get('hectareasTotales', ''), max_length=50)
+        valor_canon = sanitize_input(data.get('valorCanon', ''), max_length=50)
+        duracion_contrato_anios = sanitize_input(data.get('duracionContratoAnios', ''), max_length=10)
+        fecha_inicio_contrato = sanitize_input(data.get('fechaInicioContrato', ''), max_length=50)
+        ciudad_firma_contrato = sanitize_input(data.get('ciudadFirmaContrato', ''), max_length=100)
+        dia_firma = sanitize_input(data.get('diaFirma', ''), max_length=10)
+        mes_firma = sanitize_input(data.get('mesFirma', ''), max_length=10)
+        anio_firma = sanitize_input(data.get('anioFirma', ''), max_length=10)
+        
+        # Obtener hectáreas en texto si viene del formulario
+        hectareas_arrendadas_texto = data.get('hectareasArrendadasTexto', '')
+        if not hectareas_arrendadas_texto and hectareas_arrendadas:
+            try:
+                hectareas_num = float(hectareas_arrendadas.replace(',', '.'))
+                # Convertir a texto simple
+                hectareas_arrendadas_texto = str(hectareas_num)
+            except:
+                hectareas_arrendadas_texto = hectareas_arrendadas
+        
+        # Obtener nombre del mes
+        mes_nombre = data.get('mesFirmaNombre', '')
+        if not mes_nombre and mes_firma:
+            try:
+                mes_num = int(mes_firma)
+                if 1 <= mes_num <= 12:
+                    mes_nombre = MESES.get(mes_num, mes_firma)
+            except:
+                mes_nombre = mes_firma
+        
+        # Cargar template
+        template_path = os.path.join(os.path.dirname(__file__), 'templates', 'contrato_arrendamiento.docx')
+        if not os.path.exists(template_path):
+            return jsonify({"error": f"Template no encontrado en: {template_path}"}), 404
+        
+        doc = Document(template_path)
+        
+        # Preparar reemplazos con todas las variaciones posibles
+        reemplazos = {}
+        
+        # Arrendador
+        reemplazos['NOMBRE_ARRENDADOR'] = nombre_arrendador.upper()
+        reemplazos['{NOMBRE_ARRENDADOR}'] = nombre_arrendador.upper()
+        reemplazos['{{NOMBRE_ARRENDADOR}}'] = nombre_arrendador.upper()
+        reemplazos['[NOMBRE_ARRENDADOR]'] = nombre_arrendador.upper()
+        
+        reemplazos['CEDULA_ARRENDADOR'] = cedula_arrendador
+        reemplazos['{CEDULA_ARRENDADOR}'] = cedula_arrendador
+        reemplazos['{{CEDULA_ARRENDADOR}}'] = cedula_arrendador
+        reemplazos['[CEDULA_ARRENDADOR]'] = cedula_arrendador
+        
+        reemplazos['CIUDAD_EXPEDICION_ARRENDADOR'] = ciudad_expedicion_arrendador.upper()
+        reemplazos['{CIUDAD_EXPEDICION_ARRENDADOR}'] = ciudad_expedicion_arrendador.upper()
+        reemplazos['{{CIUDAD_EXPEDICION_ARRENDADOR}}'] = ciudad_expedicion_arrendador.upper()
+        reemplazos['[CIUDAD_EXPEDICION_ARRENDADOR]'] = ciudad_expedicion_arrendador.upper()
+        
+        # Arrendatario
+        reemplazos['NOMBRE_ARRENDATARIO'] = nombre_arrendatario.upper()
+        reemplazos['{NOMBRE_ARRENDATARIO}'] = nombre_arrendatario.upper()
+        reemplazos['{{NOMBRE_ARRENDATARIO}}'] = nombre_arrendatario.upper()
+        reemplazos['[NOMBRE_ARRENDATARIO]'] = nombre_arrendatario.upper()
+        
+        reemplazos['CEDULA_ARRENDATARIO'] = cedula_arrendatario
+        reemplazos['{CEDULA_ARRENDATARIO}'] = cedula_arrendatario
+        reemplazos['{{CEDULA_ARRENDATARIO}}'] = cedula_arrendatario
+        reemplazos['[CEDULA_ARRENDATARIO]'] = cedula_arrendatario
+        
+        reemplazos['CIUDAD_EXPEDICION_ARRENDATARIO'] = ciudad_expedicion_arrendatario.upper()
+        reemplazos['{CIUDAD_EXPEDICION_ARRENDATARIO}'] = ciudad_expedicion_arrendatario.upper()
+        reemplazos['{{CIUDAD_EXPEDICION_ARRENDATARIO}}'] = ciudad_expedicion_arrendatario.upper()
+        reemplazos['[CIUDAD_EXPEDICION_ARRENDATARIO]'] = ciudad_expedicion_arrendatario.upper()
+        
+        # Predio
+        reemplazos['NOMBRE_PREDIO'] = nombre_predio.upper()
+        reemplazos['{NOMBRE_PREDIO}'] = nombre_predio.upper()
+        reemplazos['{{NOMBRE_PREDIO}}'] = nombre_predio.upper()
+        reemplazos['[NOMBRE_PREDIO]'] = nombre_predio.upper()
+        
+        reemplazos['NOMBRE_VEREDA'] = nombre_vereda.upper()
+        reemplazos['{NOMBRE_VEREDA}'] = nombre_vereda.upper()
+        reemplazos['{{NOMBRE_VEREDA}}'] = nombre_vereda.upper()
+        reemplazos['[NOMBRE_VEREDA]'] = nombre_vereda.upper()
+        
+        reemplazos['MUNICIPIO'] = municipio.upper()
+        reemplazos['{MUNICIPIO}'] = municipio.upper()
+        reemplazos['{{MUNICIPIO}}'] = municipio.upper()
+        reemplazos['[MUNICIPIO]'] = municipio.upper()
+        
+        reemplazos['DEPARTAMENTO'] = departamento.upper()
+        reemplazos['{DEPARTAMENTO}'] = departamento.upper()
+        reemplazos['{{DEPARTAMENTO}}'] = departamento.upper()
+        reemplazos['[DEPARTAMENTO]'] = departamento.upper()
+        
+        reemplazos['DIRECCION_REFERENCIA'] = direccion_referencia.upper()
+        reemplazos['{DIRECCION_REFERENCIA}'] = direccion_referencia.upper()
+        reemplazos['{{DIRECCION_REFERENCIA}}'] = direccion_referencia.upper()
+        reemplazos['[DIRECCION_REFERENCIA]'] = direccion_referencia.upper()
+        
+        # Hectáreas
+        reemplazos['HECTAREAS_ARRENDADAS'] = hectareas_arrendadas
+        reemplazos['{HECTAREAS_ARRENDADAS}'] = hectareas_arrendadas
+        reemplazos['{{HECTAREAS_ARRENDADAS}}'] = hectareas_arrendadas
+        reemplazos['[HECTAREAS_ARRENDADAS]'] = hectareas_arrendadas
+        
+        reemplazos['HECTAREAS_ARRENDADAS_TEXTO'] = hectareas_arrendadas_texto.upper()
+        reemplazos['{HECTAREAS_ARRENDADAS_TEXTO}'] = hectareas_arrendadas_texto.upper()
+        reemplazos['{{HECTAREAS_ARRENDADAS_TEXTO}}'] = hectareas_arrendadas_texto.upper()
+        reemplazos['[HECTAREAS_ARRENDADAS_TEXTO]'] = hectareas_arrendadas_texto.upper()
+        
+        reemplazos['HECTAREAS_TOTALES'] = hectareas_totales
+        reemplazos['{HECTAREAS_TOTALES}'] = hectareas_totales
+        reemplazos['{{HECTAREAS_TOTALES}}'] = hectareas_totales
+        reemplazos['[HECTAREAS_TOTALES]'] = hectareas_totales
+        
+        # Valor del canon
+        reemplazos['VALOR_CANON'] = valor_canon
+        reemplazos['{VALOR_CANON}'] = valor_canon
+        reemplazos['{{VALOR_CANON}}'] = valor_canon
+        reemplazos['[VALOR_CANON]'] = valor_canon
+        
+        # Duración y fecha inicio
+        reemplazos['DURACION_CONTRATO_ANIOS'] = duracion_contrato_anios
+        reemplazos['{DURACION_CONTRATO_ANIOS}'] = duracion_contrato_anios
+        reemplazos['{{DURACION_CONTRATO_ANIOS}}'] = duracion_contrato_anios
+        reemplazos['[DURACION_CONTRATO_ANIOS]'] = duracion_contrato_anios
+        
+        # Formatear fecha de inicio
+        fecha_inicio_formateada = ''
+        if fecha_inicio_contrato:
+            try:
+                fecha_obj = datetime.strptime(fecha_inicio_contrato, '%Y-%m-%d')
+                fecha_inicio_formateada = formatear_fecha(fecha_inicio_contrato)
+            except:
+                fecha_inicio_formateada = fecha_inicio_contrato
+        
+        reemplazos['FECHA_INICIO_CONTRATO'] = fecha_inicio_formateada
+        reemplazos['{FECHA_INICIO_CONTRATO}'] = fecha_inicio_formateada
+        reemplazos['{{FECHA_INICIO_CONTRATO}}'] = fecha_inicio_formateada
+        reemplazos['[FECHA_INICIO_CONTRATO]'] = fecha_inicio_formateada
+        
+        # Firma
+        reemplazos['CIUDAD_FIRMA_CONTRATO'] = ciudad_firma_contrato.upper()
+        reemplazos['{CIUDAD_FIRMA_CONTRATO}'] = ciudad_firma_contrato.upper()
+        reemplazos['{{CIUDAD_FIRMA_CONTRATO}}'] = ciudad_firma_contrato.upper()
+        reemplazos['[CIUDAD_FIRMA_CONTRATO]'] = ciudad_firma_contrato.upper()
+        
+        reemplazos['DIA_FIRMA'] = dia_firma
+        reemplazos['{DIA_FIRMA}'] = dia_firma
+        reemplazos['{{DIA_FIRMA}}'] = dia_firma
+        reemplazos['[DIA_FIRMA]'] = dia_firma
+        
+        reemplazos['MES_FIRMA'] = mes_nombre.upper()
+        reemplazos['{MES_FIRMA}'] = mes_nombre.upper()
+        reemplazos['{{MES_FIRMA}}'] = mes_nombre.upper()
+        reemplazos['[MES_FIRMA]'] = mes_nombre.upper()
+        
+        reemplazos['ANIO_FIRMA'] = anio_firma
+        reemplazos['{ANIO_FIRMA}'] = anio_firma
+        reemplazos['{{ANIO_FIRMA}}'] = anio_firma
+        reemplazos['[ANIO_FIRMA]'] = anio_firma
+        
+        # Reemplazar texto en el documento
+        reemplazar_texto_en_documento(doc, reemplazos)
+        
+        # Guardar en memoria
+        output = io.BytesIO()
+        doc.save(output)
+        output.seek(0)
+        
+        # Nombre del archivo
+        nombre_archivo = nombre_arrendador.replace(' ', '_') if nombre_arrendador else 'Contrato_Arrendamiento'
+        filename = f"Contrato_Arrendamiento_{nombre_archivo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
 if __name__ == '__main__':
     # Crear directorio de templates si no existe
     os.makedirs(os.path.join(os.path.dirname(__file__), 'templates'), exist_ok=True)
