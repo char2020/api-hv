@@ -1567,9 +1567,20 @@ def generate_contrato_arrendamiento():
                 mes_nombre = mes_firma
         
         # Cargar template
-        template_path = os.path.join(os.path.dirname(__file__), 'templates', 'contrato.docx')
+        base_dir = os.path.dirname(__file__)
+        template_path = os.path.join(base_dir, 'templates', 'contrato.docx')
+        
+        # Debug: Listar archivos en templates si no existe
         if not os.path.exists(template_path):
-            return jsonify({"error": f"Template no encontrado en: {template_path}"}), 404
+            templates_dir = os.path.join(base_dir, 'templates')
+            available_files = []
+            if os.path.exists(templates_dir):
+                available_files = os.listdir(templates_dir)
+            error_msg = f"Template no encontrado en: {template_path}\n"
+            error_msg += f"Directorio base: {base_dir}\n"
+            error_msg += f"Directorio templates: {templates_dir}\n"
+            error_msg += f"Archivos disponibles en templates: {', '.join(available_files) if available_files else 'Ninguno'}"
+            return jsonify({"error": error_msg}), 404
         
         doc = Document(template_path)
         
