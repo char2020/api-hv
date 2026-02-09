@@ -1656,10 +1656,21 @@ def generate_contrato_arrendamiento():
         reemplazos['{{HECTAREAS_ARRENDADAS_TEXTO}}'] = hectareas_arrendadas_texto.upper()
         reemplazos['[HECTAREAS_ARRENDADAS_TEXTO]'] = hectareas_arrendadas_texto.upper()
         
+        # Hectáreas totales - múltiples variaciones
         reemplazos['HECTAREAS_TOTALES'] = hectareas_totales
+        reemplazos['HECTAREAS TOTALES'] = hectareas_totales
+        reemplazos['hectareas_totales'] = hectareas_totales
+        reemplazos['hectareas totales'] = hectareas_totales
+        reemplazos['Hectareas Totales'] = hectareas_totales
+        reemplazos['HectareasTotales'] = hectareas_totales
         reemplazos['{HECTAREAS_TOTALES}'] = hectareas_totales
+        reemplazos['{HECTAREAS TOTALES}'] = hectareas_totales
         reemplazos['{{HECTAREAS_TOTALES}}'] = hectareas_totales
+        reemplazos['{{HECTAREAS TOTALES}}'] = hectareas_totales
         reemplazos['[HECTAREAS_TOTALES]'] = hectareas_totales
+        reemplazos['[HECTAREAS TOTALES]'] = hectareas_totales
+        reemplazos['<<HECTAREAS_TOTALES>>'] = hectareas_totales
+        reemplazos['<<HECTAREAS TOTALES>>'] = hectareas_totales
         
         # Valor del canon
         reemplazos['VALOR_CANON'] = valor_canon
@@ -1710,6 +1721,41 @@ def generate_contrato_arrendamiento():
         
         # Reemplazar texto en el documento
         reemplazar_texto_en_documento(doc, reemplazos)
+        
+        # Limpiar duplicaciones después del reemplazo
+        # Buscar y limpiar patrones comunes de duplicación
+        import re
+        for paragraph in doc.paragraphs:
+            texto = paragraph.text
+            # Limpiar duplicaciones específicas primero
+            # "CONVENCIÓN de CONVENCIÓN" -> "CONVENCIÓN"
+            texto = re.sub(r'\b(CONVENCIÓN)\s+de\s+\1\b', r'\1', texto, flags=re.IGNORECASE)
+            # "NORTE DE SANTANDER de NORTE DE SANTANDER" -> "NORTE DE SANTANDER"
+            texto = re.sub(r'\b(NORTE DE SANTANDER)\s+de\s+\1\b', r'\1', texto, flags=re.IGNORECASE)
+            # Limpiar duplicaciones generales: "TEXTO de TEXTO" -> "TEXTO"
+            # Aplicar múltiples veces para casos anidados
+            for _ in range(3):  # Aplicar hasta 3 veces para casos complejos
+                # Patrón que captura cualquier texto seguido de " de " y el mismo texto
+                texto_anterior = texto
+                # Mejorar el patrón para capturar mejor textos con espacios
+                texto = re.sub(r'\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{2,}?)\s+de\s+\1\b', r'\1', texto, flags=re.IGNORECASE)
+                if texto == texto_anterior:
+                    break  # No hay más cambios
+            # Limpiar duplicaciones de año - múltiples patrones
+            texto = re.sub(r'DE (\d{4}) DE \1', r'DE \1', texto)
+            texto = re.sub(r'DEL (\d{4}) DEL \1', r'DEL \1', texto)
+            texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
+            texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)
+            # Aplicar nuevamente para casos anidados
+            texto = re.sub(r'DE (\d{4}) DEL \1', r'DE \1', texto)
+            texto = re.sub(r'DEL (\d{4}) DE \1', r'DEL \1', texto)
+            # Limpiar espacios múltiples
+            texto = re.sub(r'  +', ' ', texto)
+            
+            if texto != paragraph.text:
+                # Limpiar el párrafo y reconstruirlo
+                paragraph.clear()
+                paragraph.add_run(texto)
         
         # Guardar en memoria
         output = io.BytesIO()
