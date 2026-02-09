@@ -1851,16 +1851,41 @@ def upload_file_to_drive(service, file_data, file_name, folder_id):
         # Convertir base64 a bytes si es necesario
         if isinstance(file_data, str):
             if file_data.startswith('data:'):
-                # Es un data URL, extraer el base64
+                # Es un data URL, extraer el base64 y el mimetype
                 header, encoded = file_data.split(',', 1)
                 file_bytes = base64.b64decode(encoded)
+                # Intentar extraer mimetype del header si está disponible
+                mimetype = 'application/pdf'  # Por defecto
+                if 'mimetype=' in header or ':' in header:
+                    # Buscar mimetype en el header (ej: data:application/pdf;base64)
+                    if ':' in header:
+                        mime_part = header.split(':')[1].split(';')[0]
+                        if mime_part:
+                            mimetype = mime_part
             else:
                 # Es base64 directo
                 file_bytes = base64.b64decode(file_data)
+                mimetype = 'application/pdf'  # Por defecto
         else:
             file_bytes = file_data
+            mimetype = 'application/pdf'  # Por defecto
         
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='application/pdf', resumable=True)
+        # Detectar mimetype por extensión si no se detectó
+        if mimetype == 'application/pdf':
+            file_ext = os.path.splitext(file_name)[1].lower()
+            mimetype_map = {
+                '.pdf': 'application/pdf',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.doc': 'application/msword',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.xls': 'application/vnd.ms-excel',
+                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            }
+            mimetype = mimetype_map.get(file_ext, 'application/pdf')
+        
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=True)
         
         file = service.files().create(
             body=file_metadata,
@@ -1874,7 +1899,9 @@ def upload_file_to_drive(service, file_data, file_name, folder_id):
             'name': file_name
         }
     except Exception as e:
-        print(f'Error subiendo archivo a Google Drive: {e}')
+        import traceback
+        print(f'Error subiendo archivo {file_name} a Google Drive: {e}')
+        print(f'Traceback: {traceback.format_exc()}')
         return None
 
 @app.route('/upload-attachments-to-drive', methods=['POST'])
@@ -1939,6 +1966,7 @@ def upload_attachments_to_drive():
         for attachment_key, attachment_data in attachments.items():
             try:
                 if not attachment_data or not attachment_data.get('dataUrl'):
+                    print(f'⚠️ Saltando {attachment_key}: no tiene dataUrl')
                     continue
                 
                 # Obtener nombre descriptivo del anexo
@@ -1951,6 +1979,8 @@ def upload_attachments_to_drive():
                 # Crear nombre del archivo: nombre_anexo.extensión
                 file_name = f"{attachment_name}{file_extension}"
                 
+                print(f'📤 Subiendo archivo: {file_name} (tipo: {attachment_key})')
+                
                 # Subir archivo
                 result = upload_file_to_drive(
                     service,
@@ -1960,6 +1990,7 @@ def upload_attachments_to_drive():
                 )
                 
                 if result:
+                    print(f'✅ Archivo subido exitosamente: {file_name} (ID: {result["file_id"]})')
                     uploaded_files.append({
                         'key': attachment_key,
                         'name': file_name,
@@ -1967,9 +1998,15 @@ def upload_attachments_to_drive():
                         'web_link': result.get('web_link', '')
                     })
                 else:
-                    errors.append(f"Error subiendo {attachment_key}")
+                    error_msg = f"Error subiendo {attachment_key} ({file_name})"
+                    print(f'❌ {error_msg}')
+                    errors.append(error_msg)
             except Exception as e:
-                errors.append(f"Error procesando {attachment_key}: {str(e)}")
+                import traceback
+                error_msg = f"Error procesando {attachment_key}: {str(e)}"
+                print(f'❌ {error_msg}')
+                print(f'Traceback: {traceback.format_exc()}')
+                errors.append(error_msg)
         
         return jsonify({
             'success': True,
