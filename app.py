@@ -728,44 +728,48 @@ def reemplazar_texto_en_documento(doc, reemplazos):
     import re
     
     def reemplazar_en_parrafo(paragraph, reemplazos_dict):
-        """Reemplaza texto en un párrafo manteniendo formato"""
+        """Reemplaza texto en un párrafo manteniendo formato, especialmente negrilla"""
         # Obtener todo el texto del párrafo
         texto_original = paragraph.text
         if not texto_original:
             return
         
-        texto_nuevo = texto_original
-        cambios_realizados = False
+        # Trabajar directamente con los runs para conservar formato individual
+        if not paragraph.runs:
+            return
         
-        # Buscar y reemplazar (case-insensitive) - ordenar por longitud descendente para evitar reemplazos parciales
+        # Buscar y reemplazar en cada run, conservando formato
         sorted_reemplazos = sorted(reemplazos_dict.items(), key=lambda x: len(x[0]), reverse=True)
         
         for placeholder, valor in sorted_reemplazos:
-            if not placeholder:  # Saltar placeholders vacíos
+            if not placeholder:
                 continue
             
-            # Buscar placeholder de forma case-insensitive
-            # Para dia1 y dia2, buscar sin word boundaries para capturar variaciones
-            if 'dia' in placeholder.lower() and len(placeholder) <= 5:
-                # Buscar dia1 o dia2 incluso si está en medio de texto (ej: "AL dia2")
+            # Si el placeholder tiene formato {{VARIABLE}}, buscar solo en mayúsculas y case-sensitive
+            if placeholder.startswith('{{') and placeholder.endswith('}}'):
                 pattern = re.escape(placeholder)
+                case_sensitive = True
+            # Para dia1 y dia2, buscar sin word boundaries para capturar variaciones
+            elif 'dia' in placeholder.lower() and len(placeholder) <= 5:
+                pattern = re.escape(placeholder)
+                case_sensitive = False
             elif placeholder.upper() in ['4 TURNOS', 'ADICIONALES', 'SUELDO FIJO MENSUAL', 'SUELDO PROPORCIONAL', 
                                          'BONO SEGURIDAD', 'AUXILIO DE TRANSPORTE', 'TURNOS', 'DESCANSOS']:
-                # NO reemplazar texto descriptivo - debe mantenerse en el documento
                 continue
             elif 'SUELDO FIJO' in placeholder.upper() or 'SUELDO PROPORCIONAL' in placeholder.upper():
-                # NO reemplazar texto descriptivo completo
                 continue
             elif 'BONO SEGURIDAD' in placeholder.upper() or 'AUXILIO' in placeholder.upper():
-                # NO reemplazar texto descriptivo completo
                 continue
             else:
                 pattern = re.escape(placeholder)
+                case_sensitive = False
             
-            matches = list(re.finditer(pattern, texto_nuevo, re.IGNORECASE))
+            # Buscar el placeholder en todos los runs
+            texto_completo = ''.join([run.text for run in paragraph.runs])
+            flags = 0 if case_sensitive else re.IGNORECASE
+            matches = list(re.finditer(pattern, texto_completo, flags))
             
             if matches:
-                cambios_realizados = True
                 # Reemplazar desde el final hacia el inicio para mantener índices
                 for match in reversed(matches):
                     start, end = match.span()
@@ -773,67 +777,94 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                     
                     # Para dia1 y dia2, verificar si necesita espacios alrededor
                     if 'dia' in placeholder.lower() and len(placeholder) <= 5:
-                        # Verificar si hay espacios alrededor en el texto original
-                        tiene_espacio_antes = start > 0 and texto_nuevo[start-1].isspace()
-                        tiene_espacio_despues = end < len(texto_nuevo) and texto_nuevo[end].isspace()
+                        tiene_espacio_antes = start > 0 and texto_completo[start-1].isspace()
+                        tiene_espacio_despues = end < len(texto_completo) and texto_completo[end].isspace()
                         
-                        # Si el valor ya tiene espacios pero el placeholder no los tenía, ajustar
                         if valor_reemplazo.startswith(' ') and tiene_espacio_antes:
                             valor_reemplazo = valor_reemplazo.lstrip()
                         if valor_reemplazo.endswith(' ') and tiene_espacio_despues:
                             valor_reemplazo = valor_reemplazo.rstrip()
                         
-                        # Si no hay espacios alrededor y el valor tampoco los tiene, agregarlos
                         if not tiene_espacio_antes and not valor_reemplazo.startswith(' '):
-                            # Verificar si el carácter anterior es una letra (necesita espacio)
-                            if start > 0 and texto_nuevo[start-1].isalnum():
+                            if start > 0 and texto_completo[start-1].isalnum():
                                 valor_reemplazo = ' ' + valor_reemplazo
                         if not tiene_espacio_despues and not valor_reemplazo.endswith(' '):
-                            # Verificar si el carácter siguiente es una letra (necesita espacio)
-                            if end < len(texto_nuevo) and texto_nuevo[end].isalnum():
+                            if end < len(texto_completo) and texto_completo[end].isalnum():
                                 valor_reemplazo = valor_reemplazo + ' '
                     
-                    texto_nuevo = texto_nuevo[:start] + valor_reemplazo + texto_nuevo[end:]
-                    # Log para debug de dia1 y dia2 (removido por seguridad)
-                    # if 'dia' in placeholder.lower():
-                    #     print(f"  ✅ Reemplazado '{placeholder}' por '{valor_reemplazo}' en: ...{texto_original[max(0, start-20):min(len(texto_original), start+20)]}...")
-        
-        if cambios_realizados and texto_nuevo != texto_original:
-            # Guardar formato del primer run si existe
-            formato_original = None
-            if paragraph.runs:
-                primer_run = paragraph.runs[0]
-                formato_original = {
-                    'font_name': primer_run.font.name if primer_run.font.name else None,
-                    'font_size': primer_run.font.size if primer_run.font.size else None,
-                    'bold': primer_run.bold if primer_run.bold is not None else False,
-                    'italic': primer_run.italic if primer_run.italic is not None else False,
-                    'color': primer_run.font.color.rgb if primer_run.font.color and primer_run.font.color.rgb else None
-                }
-            
-            # Limpiar y reemplazar
-            paragraph.clear()
-            nuevo_run = paragraph.add_run(texto_nuevo)
-            
-            # Restaurar formato si existe
-            if formato_original:
-                if formato_original['font_name']:
-                    nuevo_run.font.name = formato_original['font_name']
-                if formato_original['font_size']:
-                    nuevo_run.font.size = formato_original['font_size']
-                if formato_original['color']:
-                    nuevo_run.font.color.rgb = formato_original['color']
-                nuevo_run.bold = formato_original['bold']
-                nuevo_run.italic = formato_original['italic']
+                    # Encontrar en qué run(s) está el placeholder y conservar formato (especialmente negrilla)
+                    current_pos = 0
+                    formato_aplicar = None
+                    placeholder_encontrado = False
+                    
+                    for run in paragraph.runs:
+                        run_start = current_pos
+                        run_end = current_pos + len(run.text)
+                        
+                        # Si el placeholder está completamente en este run
+                        if run_start <= start < run_end and run_start <= end <= run_end:
+                            # Conservar formato del run (incluyendo negrilla)
+                            formato_aplicar = {
+                                'font_name': run.font.name if run.font.name else None,
+                                'font_size': run.font.size if run.font.size else None,
+                                'bold': run.bold if run.bold is not None else False,
+                                'italic': run.italic if run.italic is not None else False,
+                                'color': run.font.color.rgb if run.font.color and run.font.color.rgb else None
+                            }
+                            
+                            # Reemplazar en el run - el formato se conserva automáticamente
+                            run_start_in_run = start - run_start
+                            run_end_in_run = end - run_start
+                            nuevo_texto = run.text[:run_start_in_run] + valor_reemplazo + run.text[run_end_in_run:]
+                            run.text = nuevo_texto
+                            placeholder_encontrado = True
+                            break
+                        
+                        # Si el placeholder comienza en este run (puede estar dividido)
+                        elif run_start <= start < run_end and formato_aplicar is None:
+                            # Usar el formato del run donde comienza el placeholder (conservar negrilla)
+                            formato_aplicar = {
+                                'font_name': run.font.name if run.font.name else None,
+                                'font_size': run.font.size if run.font.size else None,
+                                'bold': run.bold if run.bold is not None else False,
+                                'italic': run.italic if run.italic is not None else False,
+                                'color': run.font.color.rgb if run.font.color and run.font.color.rgb else None
+                            }
+                        
+                        current_pos = run_end
+                    
+                    # Si el placeholder estaba dividido entre múltiples runs, reconstruir conservando formato
+                    if not placeholder_encontrado and formato_aplicar:
+                        # Reconstruir texto completo
+                        texto_completo_nuevo = ''.join([run.text for run in paragraph.runs])
+                        if placeholder in texto_completo_nuevo:
+                            # Reemplazar en el texto completo
+                            texto_completo_nuevo = texto_completo_nuevo.replace(placeholder, valor_reemplazo, 1)
+                            
+                            # Limpiar y reconstruir con el formato del run donde estaba el placeholder
+                            paragraph.clear()
+                            nuevo_run = paragraph.add_run(texto_completo_nuevo)
+                            
+                            # Aplicar formato conservado (incluyendo negrilla)
+                            if formato_aplicar:
+                                if formato_aplicar['font_name']:
+                                    nuevo_run.font.name = formato_aplicar['font_name']
+                                if formato_aplicar['font_size']:
+                                    nuevo_run.font.size = formato_aplicar['font_size']
+                                if formato_aplicar['color']:
+                                    nuevo_run.font.color.rgb = formato_aplicar['color']
+                                nuevo_run.bold = formato_aplicar['bold']
+                                nuevo_run.italic = formato_aplicar['italic']
     
     def reemplazar_en_runs(runs, reemplazos_dict):
-        """Reemplaza texto en runs individuales - útil para variables divididas en múltiples runs"""
+        """Reemplaza texto en runs individuales conservando formato, especialmente negrilla"""
         texto_completo = ''.join([run.text for run in runs])
         if not texto_completo:
             return False
         
         texto_nuevo = texto_completo
         cambios_realizados = False
+        formato_aplicar = None
         
         # Ordenar por longitud descendente
         sorted_reemplazos = sorted(reemplazos_dict.items(), key=lambda x: len(x[0]), reverse=True)
@@ -842,13 +873,39 @@ def reemplazar_texto_en_documento(doc, reemplazos):
             if not placeholder:
                 continue
             
-            pattern = re.escape(placeholder)
-            matches = list(re.finditer(pattern, texto_nuevo, re.IGNORECASE))
+            # Si el placeholder tiene formato {{VARIABLE}}, buscar solo en mayúsculas y case-sensitive
+            if placeholder.startswith('{{') and placeholder.endswith('}}'):
+                pattern = re.escape(placeholder)
+                matches = list(re.finditer(pattern, texto_nuevo))  # Case-sensitive
+            else:
+                pattern = re.escape(placeholder)
+                matches = list(re.finditer(pattern, texto_nuevo, re.IGNORECASE))
             
             if matches:
                 cambios_realizados = True
+                # Encontrar el formato del run donde está el placeholder (conservar negrilla)
                 for match in reversed(matches):
                     start, end = match.span()
+                    
+                    # Encontrar en qué run está el placeholder para conservar su formato
+                    current_pos = 0
+                    for run in runs:
+                        run_start = current_pos
+                        run_end = current_pos + len(run.text)
+                        
+                        if run_start <= start < run_end and formato_aplicar is None:
+                            # Conservar formato del run donde está el placeholder (incluyendo negrilla)
+                            formato_aplicar = {
+                                'font_name': run.font.name if run.font.name else None,
+                                'font_size': run.font.size if run.font.size else None,
+                                'bold': run.bold if run.bold is not None else False,
+                                'italic': run.italic if run.italic is not None else False,
+                                'color': run.font.color.rgb if run.font.color and run.font.color.rgb else None
+                            }
+                            break
+                        
+                        current_pos = run_end
+                    
                     texto_nuevo = texto_nuevo[:start] + str(valor) + texto_nuevo[end:]
         
         if cambios_realizados and texto_nuevo != texto_completo:
@@ -857,6 +914,16 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                 run.text = ''
             if runs:
                 runs[0].text = texto_nuevo
+                # Aplicar formato conservado (incluyendo negrilla)
+                if formato_aplicar:
+                    if formato_aplicar['font_name']:
+                        runs[0].font.name = formato_aplicar['font_name']
+                    if formato_aplicar['font_size']:
+                        runs[0].font.size = formato_aplicar['font_size']
+                    if formato_aplicar['color']:
+                        runs[0].font.color.rgb = formato_aplicar['color']
+                    runs[0].bold = formato_aplicar['bold']
+                    runs[0].italic = formato_aplicar['italic']
             return True
         
         return False
@@ -1105,108 +1172,46 @@ def generate_cuenta_cobro():
         total_calculado = sf1_valor + bs1_valor + ad1_valor + ax1_valor
         total_formateado = formatear_monto(total_calculado, incluir_signo=False)
         
-        # Nombre - múltiples variaciones
-        reemplazos['Name1'] = nombre.upper()
-        reemplazos['NAME1'] = nombre.upper()
-        reemplazos['name1'] = nombre.upper()
-        reemplazos['{Name1}'] = nombre.upper()
+        # Solo reemplazar variables con formato {{VARIABLE}} (llaves dobles y mayúsculas)
+        # Nombre
         reemplazos['{{Name1}}'] = nombre.upper()
-        reemplazos['[Name1]'] = nombre.upper()
-        reemplazos['<<Name1>>'] = nombre.upper()
         
-        # Cédula - múltiples variaciones
-        reemplazos['Cedu1'] = cedula
-        reemplazos['CEDU1'] = cedula
-        reemplazos['cedu1'] = cedula
-        reemplazos['{Cedu1}'] = cedula
+        # Cédula
         reemplazos['{{Cedu1}}'] = cedula
-        reemplazos['[Cedu1]'] = cedula
-        reemplazos['<<Cedu1>>'] = cedula
         
-        # Teléfono - múltiples variaciones (variable Num1 en el Word)
-        # Asegurar que siempre se reemplace, incluso si está vacío
+        # Teléfono - asegurar que siempre se reemplace, incluso si está vacío
         telefono_valor = telefono if telefono else ''
-        reemplazos['Num1'] = telefono_valor
-        reemplazos['NUM1'] = telefono_valor
-        reemplazos['num1'] = telefono_valor
-        reemplazos['{Num1}'] = telefono_valor
         reemplazos['{{Num1}}'] = telefono_valor
-        reemplazos['[Num1]'] = telefono_valor
-        reemplazos['<<Num1>>'] = telefono_valor
-        # También variaciones con espacios
-        reemplazos['Num 1'] = telefono_valor
-        reemplazos['NUM 1'] = telefono_valor
-        reemplazos['{Num 1}'] = telefono_valor
         
-        # Banco - múltiples variaciones (variable banco1 en el Word para NOMBRE del banco)
-        reemplazos['banco1'] = banco
-        reemplazos['BANCO1'] = banco
-        reemplazos['{banco1}'] = banco
+        # Banco
         reemplazos['{{banco1}}'] = banco
-        reemplazos['[banco1]'] = banco
-        reemplazos['<<banco1>>'] = banco
         
-        # Número de cuenta bancaria - variable nbanco1 en el Word
-        reemplazos['nbanco1'] = cuenta_bancaria
-        reemplazos['NBANCO1'] = cuenta_bancaria
-        reemplazos['NBanco1'] = cuenta_bancaria
-        reemplazos['{nbanco1}'] = cuenta_bancaria
+        # Número de cuenta bancaria
         reemplazos['{{nbanco1}}'] = cuenta_bancaria
-        reemplazos['[nbanco1]'] = cuenta_bancaria
-        reemplazos['<<nbanco1>>'] = cuenta_bancaria
-        reemplazos['n banco1'] = cuenta_bancaria
-        reemplazos['N BANCO1'] = cuenta_bancaria
         
-        # Cuenta bancaria - múltiples variaciones (para mantener compatibilidad)
-        reemplazos['cuenta1'] = cuenta_bancaria
-        reemplazos['CUENTA1'] = cuenta_bancaria
-        reemplazos['{cuenta1}'] = cuenta_bancaria
+        # Cuenta bancaria
+        reemplazos['{{cuenta1}}'] = cuenta_bancaria
         
-        # Mes y año - múltiples variaciones
-        reemplazos['mes1'] = fecha_texto
-        reemplazos['MES1'] = fecha_texto
-        reemplazos['{mes1}'] = fecha_texto
+        # Mes y año
         reemplazos['{{mes1}}'] = fecha_texto
-        reemplazos['[mes1]'] = fecha_texto
-        reemplazos['<<mes1>>'] = fecha_texto
         
-        # Total/Valor - solo variables, no valores hardcodeados
-        reemplazos['valor1'] = total_formateado
-        reemplazos['VALOR1'] = total_formateado
-        reemplazos['{valor1}'] = total_formateado
+        # Total/Valor
         reemplazos['{{valor1}}'] = total_formateado
-        reemplazos['[valor1]'] = total_formateado
-        reemplazos['<<valor1>>'] = total_formateado
-        reemplazos['total1'] = total_formateado
-        reemplazos['TOTAL1'] = total_formateado
-        reemplazos['{total1}'] = total_formateado
+        reemplazos['{{total1}}'] = total_formateado
         
-        # Paciente - múltiples variaciones
+        # Paciente
         paciente_valor = paciente.upper() if paciente else ''
-        reemplazos['paciente1'] = paciente_valor
-        reemplazos['PACIENTE1'] = paciente_valor
-        reemplazos['{paciente1}'] = paciente_valor
         reemplazos['{{paciente1}}'] = paciente_valor
-        reemplazos['[paciente1]'] = paciente_valor
-        reemplazos['<<paciente1>>'] = paciente_valor
         
         # Variable sf1: Sueldo proporcional (NO incluye bono)
-        reemplazos['sf1'] = sf1_formateado
-        reemplazos['SF1'] = sf1_formateado
-        reemplazos['{sf1}'] = sf1_formateado
         reemplazos['{{sf1}}'] = sf1_formateado
-        reemplazos['[sf1]'] = sf1_formateado
-        reemplazos['<<sf1>>'] = sf1_formateado
         
-        # Días trabajados
+        # Días trabajados - mantener texto descriptivo y variable con llaves
         dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
         reemplazos['MES COMPLETO'] = dias_texto
         reemplazos['30 DÍAS'] = dias_texto
         reemplazos['30 DIAS'] = dias_texto
-        reemplazos['dias1'] = str(dias_num)
-        reemplazos['DIAS1'] = str(dias_num)
-        reemplazos['{dias1}'] = str(dias_num)
-        reemplazos['diasTrabajados'] = str(dias_num)
+        reemplazos['{{dias1}}'] = str(dias_num)
         
         # Variable dia1 y dia2 - dia1 es el día de inicio, dia2 es el último día del mes
         # Obtener diaInicio de los datos
@@ -1253,41 +1258,16 @@ def generate_cuenta_cobro():
         
         # Variable bs1/sb1: Bono de seguridad (200.000)
         # Variable principal: bs1
-        reemplazos['bs1'] = bs1_formateado
-        reemplazos['BS1'] = bs1_formateado
-        reemplazos['{bs1}'] = bs1_formateado
         reemplazos['{{bs1}}'] = bs1_formateado
-        reemplazos['[bs1]'] = bs1_formateado
-        reemplazos['<<bs1>>'] = bs1_formateado
         # Variable alternativa: sb1 (usada en el template)
-        reemplazos['sb1'] = bs1_formateado
-        reemplazos['SB1'] = bs1_formateado
-        reemplazos['{sb1}'] = bs1_formateado
         reemplazos['{{sb1}}'] = bs1_formateado
-        reemplazos['[sb1]'] = bs1_formateado
-        reemplazos['<<sb1>>'] = bs1_formateado
-        # Variaciones con espacios
-        reemplazos[' sb1 '] = bs1_formateado
-        reemplazos[' SB1 '] = bs1_formateado
-        reemplazos['sb1 '] = bs1_formateado
-        reemplazos[' sb1'] = bs1_formateado
         
         # Variable ad1: Adicionales
-        reemplazos['ad1'] = ad1_formateado
-        reemplazos['AD1'] = ad1_formateado
-        reemplazos['{ad1}'] = ad1_formateado
         reemplazos['{{ad1}}'] = ad1_formateado
-        reemplazos['[ad1]'] = ad1_formateado
-        reemplazos['<<ad1>>'] = ad1_formateado
         # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
         
         # Variable ax1: Auxilio de transporte
-        reemplazos['ax1'] = ax1_formateado
-        reemplazos['AX1'] = ax1_formateado
-        reemplazos['{ax1}'] = ax1_formateado
         reemplazos['{{ax1}}'] = ax1_formateado
-        reemplazos['[ax1]'] = ax1_formateado
-        reemplazos['<<ax1>>'] = ax1_formateado
         
         # Limpiar duplicaciones de texto comunes ANTES de reemplazar
         # Duplicaciones de año - múltiples variaciones (ordenar por longitud descendente)
@@ -1587,102 +1567,34 @@ def generate_contrato_arrendamiento():
         # Preparar reemplazos con todas las variaciones posibles
         reemplazos = {}
         
+        # Solo reemplazar variables con formato {{VARIABLE}} (llaves dobles y mayúsculas)
         # Arrendador
-        reemplazos['NOMBRE_ARRENDADOR'] = nombre_arrendador.upper()
-        reemplazos['{NOMBRE_ARRENDADOR}'] = nombre_arrendador.upper()
         reemplazos['{{NOMBRE_ARRENDADOR}}'] = nombre_arrendador.upper()
-        reemplazos['[NOMBRE_ARRENDADOR]'] = nombre_arrendador.upper()
-        
-        reemplazos['CEDULA_ARRENDADOR'] = cedula_arrendador
-        reemplazos['{CEDULA_ARRENDADOR}'] = cedula_arrendador
         reemplazos['{{CEDULA_ARRENDADOR}}'] = cedula_arrendador
-        reemplazos['[CEDULA_ARRENDADOR]'] = cedula_arrendador
-        
-        reemplazos['CIUDAD_EXPEDICION_ARRENDADOR'] = ciudad_expedicion_arrendador.upper()
-        reemplazos['{CIUDAD_EXPEDICION_ARRENDADOR}'] = ciudad_expedicion_arrendador.upper()
         reemplazos['{{CIUDAD_EXPEDICION_ARRENDADOR}}'] = ciudad_expedicion_arrendador.upper()
-        reemplazos['[CIUDAD_EXPEDICION_ARRENDADOR]'] = ciudad_expedicion_arrendador.upper()
         
         # Arrendatario
-        reemplazos['NOMBRE_ARRENDATARIO'] = nombre_arrendatario.upper()
-        reemplazos['{NOMBRE_ARRENDATARIO}'] = nombre_arrendatario.upper()
         reemplazos['{{NOMBRE_ARRENDATARIO}}'] = nombre_arrendatario.upper()
-        reemplazos['[NOMBRE_ARRENDATARIO]'] = nombre_arrendatario.upper()
-        
-        reemplazos['CEDULA_ARRENDATARIO'] = cedula_arrendatario
-        reemplazos['{CEDULA_ARRENDATARIO}'] = cedula_arrendatario
         reemplazos['{{CEDULA_ARRENDATARIO}}'] = cedula_arrendatario
-        reemplazos['[CEDULA_ARRENDATARIO]'] = cedula_arrendatario
-        
-        reemplazos['CIUDAD_EXPEDICION_ARRENDATARIO'] = ciudad_expedicion_arrendatario.upper()
-        reemplazos['{CIUDAD_EXPEDICION_ARRENDATARIO}'] = ciudad_expedicion_arrendatario.upper()
         reemplazos['{{CIUDAD_EXPEDICION_ARRENDATARIO}}'] = ciudad_expedicion_arrendatario.upper()
-        reemplazos['[CIUDAD_EXPEDICION_ARRENDATARIO]'] = ciudad_expedicion_arrendatario.upper()
         
         # Predio
-        reemplazos['NOMBRE_PREDIO'] = nombre_predio.upper()
-        reemplazos['{NOMBRE_PREDIO}'] = nombre_predio.upper()
         reemplazos['{{NOMBRE_PREDIO}}'] = nombre_predio.upper()
-        reemplazos['[NOMBRE_PREDIO]'] = nombre_predio.upper()
-        
-        reemplazos['NOMBRE_VEREDA'] = nombre_vereda.upper()
-        reemplazos['{NOMBRE_VEREDA}'] = nombre_vereda.upper()
         reemplazos['{{NOMBRE_VEREDA}}'] = nombre_vereda.upper()
-        reemplazos['[NOMBRE_VEREDA]'] = nombre_vereda.upper()
-        
-        reemplazos['MUNICIPIO'] = municipio.upper()
-        reemplazos['{MUNICIPIO}'] = municipio.upper()
         reemplazos['{{MUNICIPIO}}'] = municipio.upper()
-        reemplazos['[MUNICIPIO]'] = municipio.upper()
-        
-        reemplazos['DEPARTAMENTO'] = departamento.upper()
-        reemplazos['{DEPARTAMENTO}'] = departamento.upper()
         reemplazos['{{DEPARTAMENTO}}'] = departamento.upper()
-        reemplazos['[DEPARTAMENTO]'] = departamento.upper()
-        
-        reemplazos['DIRECCION_REFERENCIA'] = direccion_referencia.upper()
-        reemplazos['{DIRECCION_REFERENCIA}'] = direccion_referencia.upper()
         reemplazos['{{DIRECCION_REFERENCIA}}'] = direccion_referencia.upper()
-        reemplazos['[DIRECCION_REFERENCIA]'] = direccion_referencia.upper()
         
         # Hectáreas
-        reemplazos['HECTAREAS_ARRENDADAS'] = hectareas_arrendadas
-        reemplazos['{HECTAREAS_ARRENDADAS}'] = hectareas_arrendadas
         reemplazos['{{HECTAREAS_ARRENDADAS}}'] = hectareas_arrendadas
-        reemplazos['[HECTAREAS_ARRENDADAS]'] = hectareas_arrendadas
-        
-        reemplazos['HECTAREAS_ARRENDADAS_TEXTO'] = hectareas_arrendadas_texto.upper()
-        reemplazos['{HECTAREAS_ARRENDADAS_TEXTO}'] = hectareas_arrendadas_texto.upper()
         reemplazos['{{HECTAREAS_ARRENDADAS_TEXTO}}'] = hectareas_arrendadas_texto.upper()
-        reemplazos['[HECTAREAS_ARRENDADAS_TEXTO]'] = hectareas_arrendadas_texto.upper()
-        
-        # Hectáreas totales - múltiples variaciones
-        reemplazos['HECTAREAS_TOTALES'] = hectareas_totales
-        reemplazos['HECTAREAS TOTALES'] = hectareas_totales
-        reemplazos['hectareas_totales'] = hectareas_totales
-        reemplazos['hectareas totales'] = hectareas_totales
-        reemplazos['Hectareas Totales'] = hectareas_totales
-        reemplazos['HectareasTotales'] = hectareas_totales
-        reemplazos['{HECTAREAS_TOTALES}'] = hectareas_totales
-        reemplazos['{HECTAREAS TOTALES}'] = hectareas_totales
         reemplazos['{{HECTAREAS_TOTALES}}'] = hectareas_totales
-        reemplazos['{{HECTAREAS TOTALES}}'] = hectareas_totales
-        reemplazos['[HECTAREAS_TOTALES]'] = hectareas_totales
-        reemplazos['[HECTAREAS TOTALES]'] = hectareas_totales
-        reemplazos['<<HECTAREAS_TOTALES>>'] = hectareas_totales
-        reemplazos['<<HECTAREAS TOTALES>>'] = hectareas_totales
         
         # Valor del canon
-        reemplazos['VALOR_CANON'] = valor_canon
-        reemplazos['{VALOR_CANON}'] = valor_canon
         reemplazos['{{VALOR_CANON}}'] = valor_canon
-        reemplazos['[VALOR_CANON]'] = valor_canon
         
         # Duración y fecha inicio
-        reemplazos['DURACION_CONTRATO_ANIOS'] = duracion_contrato_anios
-        reemplazos['{DURACION_CONTRATO_ANIOS}'] = duracion_contrato_anios
         reemplazos['{{DURACION_CONTRATO_ANIOS}}'] = duracion_contrato_anios
-        reemplazos['[DURACION_CONTRATO_ANIOS]'] = duracion_contrato_anios
         
         # Formatear fecha de inicio
         fecha_inicio_formateada = ''
@@ -1693,31 +1605,13 @@ def generate_contrato_arrendamiento():
             except:
                 fecha_inicio_formateada = fecha_inicio_contrato
         
-        reemplazos['FECHA_INICIO_CONTRATO'] = fecha_inicio_formateada
-        reemplazos['{FECHA_INICIO_CONTRATO}'] = fecha_inicio_formateada
         reemplazos['{{FECHA_INICIO_CONTRATO}}'] = fecha_inicio_formateada
-        reemplazos['[FECHA_INICIO_CONTRATO]'] = fecha_inicio_formateada
         
         # Firma
-        reemplazos['CIUDAD_FIRMA_CONTRATO'] = ciudad_firma_contrato.upper()
-        reemplazos['{CIUDAD_FIRMA_CONTRATO}'] = ciudad_firma_contrato.upper()
         reemplazos['{{CIUDAD_FIRMA_CONTRATO}}'] = ciudad_firma_contrato.upper()
-        reemplazos['[CIUDAD_FIRMA_CONTRATO]'] = ciudad_firma_contrato.upper()
-        
-        reemplazos['DIA_FIRMA'] = dia_firma
-        reemplazos['{DIA_FIRMA}'] = dia_firma
         reemplazos['{{DIA_FIRMA}}'] = dia_firma
-        reemplazos['[DIA_FIRMA]'] = dia_firma
-        
-        reemplazos['MES_FIRMA'] = mes_nombre.upper()
-        reemplazos['{MES_FIRMA}'] = mes_nombre.upper()
         reemplazos['{{MES_FIRMA}}'] = mes_nombre.upper()
-        reemplazos['[MES_FIRMA]'] = mes_nombre.upper()
-        
-        reemplazos['ANIO_FIRMA'] = anio_firma
-        reemplazos['{ANIO_FIRMA}'] = anio_firma
         reemplazos['{{ANIO_FIRMA}}'] = anio_firma
-        reemplazos['[ANIO_FIRMA]'] = anio_firma
         
         # Reemplazar texto en el documento
         reemplazar_texto_en_documento(doc, reemplazos)
