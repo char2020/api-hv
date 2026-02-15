@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, redirect
 from flask_cors import CORS
 from docx import Document
 from docx.shared import RGBColor, Pt, Inches
@@ -14,14 +14,14 @@ import time
 from datetime import datetime
 try:
     from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google_auth_oauthlib.flow import InstalledAppFlow, Flow
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseUpload
     from googleapiclient.errors import HttpError
     GOOGLE_DRIVE_AVAILABLE = True
 except ImportError:
     GOOGLE_DRIVE_AVAILABLE = False
-    # Placeholder classes para evitar errores si las dependencias no están instaladas
+    Flow = None
     Credentials = None
     InstalledAppFlow = None
     build = None
@@ -1701,7 +1701,9 @@ def get_google_drive_service():
         service = build('drive', 'v3', credentials=creds)
         return service
     except Exception as e:
+        import traceback
         print(f'Error obteniendo servicio de Google Drive: {e}')
+        print(traceback.format_exc())
         return None
 
 def create_or_get_folder(service, folder_name, parent_folder_id=None):
@@ -1902,10 +1904,13 @@ def upload_attachments_to_drive():
                 print(f'Traceback: {traceback.format_exc()}')
                 errors.append(error_msg)
         
+        # Enlace directo a la carpeta en Drive para que el admin pueda ver los archivos
+        drive_folder_link = f'https://drive.google.com/drive/folders/{client_folder_id}'
         return jsonify({
             'success': True,
             'folder_name': folder_name,
             'folder_id': client_folder_id,
+            'drive_folder_link': drive_folder_link,
             'uploaded_files': uploaded_files,
             'errors': errors,
             'message': f'Se subieron {len(uploaded_files)} archivo(s) a Google Drive'
@@ -1917,6 +1922,274 @@ def upload_attachments_to_drive():
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
+
+
+# Mapeo de keys de anexos a prefijos de nombre en Drive (reutilizable)
+ATTACHMENT_KEY_TO_DRIVE_PREFIX = {
+    'cedula': 'Cedula',
+    'actaBachiller': 'Acta_Bachiller',
+    'diplomaBachiller': 'Diploma_Bachiller',
+    'actaOtro': 'Acta_Otro_Estudio',
+    'diplomaOtro': 'Diploma_Otro_Estudio',
+    'cursos': 'Cursos',
+    'antecedentes': 'Antecedentes',
+    'rut': 'RUT',
+    'pension': 'Certificado_Pension',
+    'eps': 'Certificado_EPS',
+    'vacunas': 'Vacunas',
+    'arl': 'Certificado_ARL',
+    'otros': 'Otros_Documentos',
+    'contrato': 'Contrato',  # ARL
+}
+
+
+@app.route('/delete-attachment-from-drive', methods=['POST'])
+def delete_attachment_from_drive():
+    """Elimina un anexo de Google Drive por folder_id y attachment_key"""
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return jsonify({'error': 'Google Drive API no está disponible'}), 503
+    
+    try:
+        if not request.json:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+        
+        data = request.json
+        folder_id = data.get('folderId', '').strip()
+        attachment_key = data.get('attachmentKey', '').strip()
+        
+        if not folder_id or not attachment_key:
+            return jsonify({'error': 'Se requiere folderId y attachmentKey'}), 400
+        
+        # Obtener prefijo del nombre del archivo en Drive
+        file_prefix = ATTACHMENT_KEY_TO_DRIVE_PREFIX.get(attachment_key, attachment_key)
+        
+        service = get_google_drive_service()
+        if not service:
+            return jsonify({'error': 'No se pudo conectar con Google Drive'}), 500
+        
+        # Listar archivos en la carpeta
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            fields="files(id, name)",
+            pageSize=100
+        ).execute()
+        
+        files = results.get('files', [])
+        file_to_delete = None
+        for f in files:
+            name = f.get('name', '')
+            if name.startswith(file_prefix) or file_prefix in name:
+                file_to_delete = f
+                break
+        
+        if not file_to_delete:
+            return jsonify({
+                'success': True,
+                'message': 'Archivo no encontrado en Drive (puede que ya se eliminó)'
+            }), 200
+        
+        # Eliminar archivo de Drive
+        service.files().delete(fileId=file_to_delete['id']).execute()
+        print(f"✅ Archivo eliminado de Drive: {file_to_delete.get('name')} (ID: {file_to_delete['id']})")
+        
+        return jsonify({
+            'success': True,
+            'message': f"Archivo '{file_to_delete.get('name')}' eliminado de Google Drive"
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error eliminando anexo de Drive: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/test-upload-drive', methods=['GET', 'POST'])
+def test_upload_drive():
+    """
+    Prueba de subida a Google Drive: genera un Word de prueba (cuenta de cobro)
+    y lo sube a Drive. Sirve para verificar que credenciales y carpeta funcionan.
+    """
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'Google Drive API no está disponible',
+            'detail': 'Instala: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib'
+        }), 503
+
+    try:
+        # 1. Obtener servicio
+        service = get_google_drive_service()
+        if not service:
+            creds_env = 'GOOGLE_DRIVE_CREDENTIALS' if os.getenv('GOOGLE_DRIVE_CREDENTIALS') else None
+            token_path = os.path.join(os.path.dirname(__file__), 'token.json')
+            return jsonify({
+                'success': False,
+                'error': 'No se pudo conectar con Google Drive',
+                'detail': 'Verifica: GOOGLE_DRIVE_CREDENTIALS (env) o token.json en la carpeta api. Ninguno encontrado o inválido.'
+            }), 500
+
+        # 2. Crear un Word de prueba (tipo cuenta de cobro)
+        doc = Document()
+        doc.add_paragraph('PRUEBA DE SUBIDA A GOOGLE DRIVE', style='Heading 1')
+        doc.add_paragraph('')
+        doc.add_paragraph('Documento generado para verificar que la subida a Drive funciona.')
+        doc.add_paragraph('Fecha: ' + datetime.now().strftime('%Y-%m-%d %H:%M'))
+        doc.add_paragraph('')
+        doc.add_paragraph('— Cuenta de cobro de prueba —')
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        file_bytes = buffer.read()
+
+        # 3. Carpeta destino: la configurada o una de pruebas
+        parent_folder_id = GOOGLE_DRIVE_FOLDER_ID.strip() if GOOGLE_DRIVE_FOLDER_ID else None
+        folder_name = 'Pruebas_Upload'
+        folder_id = create_or_get_folder(service, folder_name, parent_folder_id)
+
+        if not folder_id:
+            return jsonify({
+                'success': False,
+                'error': 'No se pudo crear o acceder a la carpeta en Drive',
+                'detail': 'Revisa GOOGLE_DRIVE_FOLDER_ID o permisos de la cuenta.'
+            }), 500
+
+        # 4. Subir archivo
+        file_name = f'Prueba_Cuenta_Cobro_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+        result = upload_file_to_drive(service, file_bytes, file_name, folder_id)
+
+        if not result:
+            return jsonify({
+                'success': False,
+                'error': 'La subida del archivo falló',
+                'detail': 'Revisa los logs del servidor para el traceback.'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'message': 'Archivo de prueba subido correctamente a Google Drive',
+            'file_name': result['name'],
+            'file_id': result['file_id'],
+            'web_view_link': result.get('web_link', ''),
+            'folder_name': folder_name,
+            'folder_id': folder_id
+        }), 200
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+# --- OAuth para cliente Web: obtener token desde el navegador (una sola vez) ---
+@app.route('/get-drive-token', methods=['GET'])
+def get_drive_token():
+    """
+    Inicia el flujo OAuth con tu cliente Web. Redirige a Google para que inicies sesión
+    y autorices; luego Google redirige a /oauth2callback y se guarda el token en token.json.
+    Usa tu Web client (ID y secreto) en GOOGLE_DRIVE_CLIENT_ID y GOOGLE_DRIVE_CLIENT_SECRET.
+    En la consola de Google añade como URI de redirección: http://localhost:5000/oauth2callback
+    (y si tienes API en producción: https://tu-dominio.com/oauth2callback).
+    """
+    if not GOOGLE_DRIVE_AVAILABLE or Flow is None:
+        return jsonify({'error': 'Google Auth no disponible. Instala google-auth-oauthlib.'}), 503
+
+    client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID', '').strip()
+    client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
+    if not client_id or not client_secret:
+        return (
+            '<p>Faltan variables de entorno. En el servidor configura:</p>'
+            '<ul><li><b>GOOGLE_DRIVE_CLIENT_ID</b> = tu ID de cliente (Web)</li>'
+            '<li><b>GOOGLE_DRIVE_CLIENT_SECRET</b> = tu secreto del cliente (Web)</li></ul>'
+            '<p>En Google Cloud Console, en tu cliente Web, añade en "URIs de redirección":<br>'
+            '<code>http://localhost:5000/oauth2callback</code></p>',
+            400,
+            {'Content-Type': 'text/html; charset=utf-8'}
+        )
+
+    # Redirect URI debe coincidir con lo configurado en la consola (cliente Web)
+    use_https = request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure
+    base_url = request.host_url.rstrip('/')
+    redirect_uri = f'{base_url}/oauth2callback'
+
+    client_config = {
+        'web': {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uris': [redirect_uri],
+            'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+            'token_uri': 'https://oauth2.googleapis.com/token',
+        }
+    }
+    try:
+        flow = Flow.from_client_config(client_config, SCOPES, redirect_uri=redirect_uri)
+        authorization_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
+        return redirect(authorization_url)
+    except Exception as e:
+        import traceback
+        return f'<pre>Error iniciando OAuth: {e}\n{traceback.format_exc()}</pre>', 500
+
+
+@app.route('/oauth2callback', methods=['GET'])
+def oauth2callback():
+    """
+    Google redirige aquí tras autorizar. Intercambiamos el código por el token
+    y lo guardamos en token.json (en la carpeta api).
+    """
+    if not GOOGLE_DRIVE_AVAILABLE or Flow is None:
+        return '<p>Google Auth no disponible.</p>', 503
+
+    code = request.args.get('code')
+    if not code:
+        error = request.args.get('error', 'Falta código')
+        return f'<p>Error: {error}. No se recibió código de autorización.</p>', 400
+
+    client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID', '').strip()
+    client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
+    if not client_id or not client_secret:
+        return '<p>Faltan GOOGLE_DRIVE_CLIENT_ID o GOOGLE_DRIVE_CLIENT_SECRET.</p>', 500
+
+    base_url = request.host_url.rstrip('/')
+    redirect_uri = f'{base_url}/oauth2callback'
+    client_config = {
+        'web': {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uris': [redirect_uri],
+            'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+            'token_uri': 'https://oauth2.googleapis.com/token',
+        }
+    }
+    try:
+        flow = Flow.from_client_config(client_config, SCOPES, redirect_uri=redirect_uri)
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        token_path = os.path.join(os.path.dirname(__file__), 'token.json')
+        token_data = {
+            'token': creds.token,
+            'refresh_token': getattr(creds, 'refresh_token', None) or '',
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': list(creds.scopes) if creds.scopes else SCOPES,
+        }
+        with open(token_path, 'w', encoding='utf-8') as f:
+            import json
+            json.dump(token_data, f, indent=2)
+        return (
+            '<h2>Token guardado</h2>'
+            '<p>El token de Google Drive se guardó en <code>token.json</code>.</p>'
+            '<p>Ya puedes cerrar esta pestaña y probar la subida con <code>/test-upload-drive</code>.</p>',
+            200,
+            {'Content-Type': 'text/html; charset=utf-8'}
+        )
+    except Exception as e:
+        import traceback
+        return f'<pre>Error guardando token: {e}\n{traceback.format_exc()}</pre>', 500
+
 
 if __name__ == '__main__':
     # Crear directorio de templates si no existe
