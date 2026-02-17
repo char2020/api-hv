@@ -1213,40 +1213,44 @@ def generate_cuenta_cobro():
         paciente_upper = paciente.upper() if paciente else ''
         telefono_valor = telefono if telefono else ''
         
-        # Nombre - múltiples variaciones
-        for k in ['{{Name1}}', '{{name1}}', '{{NAME1}}', '{{nombre}}', '{{NOMBRE}}']:
+        # Nombre - con y sin llaves {{ }} (el template puede usar Name1 sin llaves)
+        for k in ['{{Name1}}', '{{name1}}', '{{NAME1}}', '{{nombre}}', '{{NOMBRE}}', 'Name1', 'name1', 'NAME1']:
             reemplazos[k] = nombre_upper
         
         # Cédula
-        for k in ['{{Cedu1}}', '{{cedu1}}', '{{CEDU1}}', '{{cedula}}', '{{CEDULA}}']:
+        for k in ['{{Cedu1}}', '{{cedu1}}', '{{CEDU1}}', '{{cedula}}', '{{CEDULA}}', 'Cedu1', 'cedu1', 'CEDU1']:
             reemplazos[k] = cedula
         
         # Teléfono
-        for k in ['{{Num1}}', '{{num1}}', '{{NUM1}}', '{{telefono}}', '{{TELEFONO}}', '{{phone}}']:
+        for k in ['{{Num1}}', '{{num1}}', '{{NUM1}}', '{{telefono}}', '{{TELEFONO}}', '{{phone}}', 'Num1', 'num1', 'NUM1']:
             reemplazos[k] = telefono_valor
         
-        # Banco
-        for k in ['{{banco1}}', '{{banco}}', '{{BANCO}}']:
+        # Cedu1 Num1 (combinado, ej: "C.C: Cedu1 Num1") - reemplazar ANTES que Cedu1 y Num1 por separado
+        reemplazos['Cedu1 Num1'] = f'{cedula} {telefono_valor}'
+        reemplazos['Cedu1  Num1'] = f'{cedula} {telefono_valor}'
+        
+        # Banco (no usar 'banco' solo - coincide dentro de 'Bancolombia')
+        for k in ['{{banco1}}', '{{banco}}', '{{BANCO}}', 'banco1', 'BANCO1']:
             reemplazos[k] = banco
         
-        # Número de cuenta bancaria / Cuenta bancaria
-        for k in ['{{nbanco1}}', '{{cuenta1}}', '{{cuentaBancaria}}', '{{CUENTABANCARIA}}']:
+        # Número de cuenta bancaria (no usar 'cuenta' solo - coincide en otras palabras)
+        for k in ['{{nbanco1}}', '{{cuenta1}}', '{{cuentaBancaria}}', '{{CUENTABANCARIA}}', 'nbanco1', 'cuenta1', 'NBANCO1']:
             reemplazos[k] = cuenta_bancaria
         
-        # Mes y año
-        for k in ['{{mes1}}', '{{mes}}', '{{MES}}', '{{fecha}}']:
+        # Mes y año (no usar 'mes' solo - coincide dentro de 'meses')
+        for k in ['{{mes1}}', '{{mes}}', '{{MES}}', '{{fecha}}', 'mes1', 'MES1']:
             reemplazos[k] = fecha_texto
         
         # Total/Valor
-        for k in ['{{valor1}}', '{{total1}}', '{{valor}}', '{{total}}', '{{VALOR}}', '{{TOTAL}}']:
+        for k in ['{{valor1}}', '{{total1}}', '{{valor}}', '{{total}}', '{{VALOR}}', '{{TOTAL}}', 'valor1', 'total1', 'valor', 'total', 'VALOR', 'TOTAL']:
             reemplazos[k] = total_formateado
         
         # Paciente
-        for k in ['{{paciente1}}', '{{paciente}}', '{{PACIENTE}}']:
+        for k in ['{{paciente1}}', '{{paciente}}', '{{PACIENTE}}', 'paciente1', 'paciente', 'PACIENTE']:
             reemplazos[k] = paciente_upper
         
         # Variable sf1: Sueldo proporcional (NO incluye bono)
-        for k in ['{{sf1}}', '{{SF1}}', '{{sueldoProporcional}}']:
+        for k in ['{{sf1}}', '{{SF1}}', '{{sueldoProporcional}}', 'sf1', 'SF1']:
             reemplazos[k] = sf1_formateado
         
         # Días trabajados - mantener texto descriptivo y variable con llaves
@@ -1254,7 +1258,7 @@ def generate_cuenta_cobro():
         reemplazos['MES COMPLETO'] = dias_texto
         reemplazos['30 DÍAS'] = dias_texto
         reemplazos['30 DIAS'] = dias_texto
-        for k in ['{{dias1}}', '{{dias}}', '{{DIAS}}', '{{diasTrabajados}}']:
+        for k in ['{{dias1}}', '{{dias}}', '{{DIAS}}', '{{diasTrabajados}}', 'dias1', 'dias', 'DIAS']:
             reemplazos[k] = str(dias_num)
         
         # Variable dia1 y dia2 - dia1 es el día de inicio, dia2 es el último día del mes
@@ -1301,15 +1305,15 @@ def generate_cuenta_cobro():
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         
         # Variable bs1/sb1: Bono de seguridad
-        for k in ['{{bs1}}', '{{sb1}}', '{{BS1}}', '{{bonoSeguridad}}']:
+        for k in ['{{bs1}}', '{{sb1}}', '{{BS1}}', '{{bonoSeguridad}}', 'bs1', 'sb1', 'BS1', 'SB1']:
             reemplazos[k] = bs1_formateado
         
         # Variable ad1: Adicionales (turnos descansos)
-        for k in ['{{ad1}}', '{{AD1}}', '{{adicionales}}']:
+        for k in ['{{ad1}}', '{{AD1}}', '{{adicionales}}', 'ad1', 'AD1']:
             reemplazos[k] = ad1_formateado
         
         # Variable ax1: Auxilio de transporte
-        for k in ['{{ax1}}', '{{AX1}}', '{{auxilioTransporte}}']:
+        for k in ['{{ax1}}', '{{AX1}}', '{{auxilioTransporte}}', 'ax1', 'AX1']:
             reemplazos[k] = ax1_formateado
         
         # Limpiar duplicaciones de texto comunes ANTES de reemplazar
