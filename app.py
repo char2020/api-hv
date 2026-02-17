@@ -1227,11 +1227,7 @@ def generate_cuenta_cobro():
         reemplazos['{{ad1}}'] = ad1_formateado
         reemplazos['{{ax1}}'] = ax1_formateado
         
-        # Días trabajados - MES COMPLETO / 30 DÍAS en tabla (texto que puede variar)
-        dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
-        reemplazos['MES COMPLETO'] = dias_texto
-        reemplazos['30 DÍAS'] = dias_texto
-        reemplazos['30 DIAS'] = dias_texto
+        # Días trabajados - {{dias1}} para uso numérico; MES COMPLETO se deja tal cual (no reemplazar con días)
         reemplazos['{{dias1}}'] = str(dias_num)
         
         # dia1 y dia2 - solo {{dia1}} {{dia2}}
