@@ -946,6 +946,33 @@ def reemplazar_texto_en_documento(doc, reemplazos):
                     # También en runs individuales
                     if paragraph.runs and len(paragraph.runs) > 1:
                         reemplazar_en_runs(paragraph.runs, reemplazos)
+    
+    # Reemplazar en headers y footers de todas las secciones
+    for section in doc.sections:
+        # Header
+        if section.header:
+            for paragraph in section.header.paragraphs:
+                reemplazar_en_parrafo(paragraph, reemplazos)
+                if paragraph.runs and len(paragraph.runs) > 1:
+                    reemplazar_en_runs(paragraph.runs, reemplazos)
+        # Footer
+        if section.footer:
+            for paragraph in section.footer.paragraphs:
+                reemplazar_en_parrafo(paragraph, reemplazos)
+                if paragraph.runs and len(paragraph.runs) > 1:
+                    reemplazar_en_runs(paragraph.runs, reemplazos)
+        # First page header/footer (si es diferente)
+        if section.different_first_page_header_footer:
+            if section.first_page_header:
+                for paragraph in section.first_page_header.paragraphs:
+                    reemplazar_en_parrafo(paragraph, reemplazos)
+                    if paragraph.runs and len(paragraph.runs) > 1:
+                        reemplazar_en_runs(paragraph.runs, reemplazos)
+            if section.first_page_footer:
+                for paragraph in section.first_page_footer.paragraphs:
+                    reemplazar_en_parrafo(paragraph, reemplazos)
+                    if paragraph.runs and len(paragraph.runs) > 1:
+                        reemplazar_en_runs(paragraph.runs, reemplazos)
 
 def formatear_monto(monto, incluir_signo=True):
     """Formatea un monto como moneda colombiana"""
@@ -1132,10 +1159,18 @@ def generate_cuenta_cobro():
         
         # Cargar template
         # Seleccionar template según tipo de cuenta de cobro
+        templates_dir = os.path.join(os.path.dirname(__file__), 'templates')
         if tipo_cuenta_cobro == '8h':
-            template_path = os.path.join(os.path.dirname(__file__), 'templates', 'cobro_8h.docx')
+            template_path = os.path.join(templates_dir, 'cobro_8h.docx')
         else:
-            template_path = os.path.join(os.path.dirname(__file__), 'templates', 'cobro_ 2026.docx')
+            # Probar ambos nombres (con y sin espacio - typo común)
+            for name in ['cobro_2026.docx', 'cobro_ 2026.docx']:
+                p = os.path.join(templates_dir, name)
+                if os.path.exists(p):
+                    template_path = p
+                    break
+            else:
+                template_path = os.path.join(templates_dir, 'cobro_2026.docx')
         if not os.path.exists(template_path):
             return jsonify({"error": f"Template no encontrado en: {template_path}"}), 404
         
@@ -1172,46 +1207,55 @@ def generate_cuenta_cobro():
         total_calculado = sf1_valor + bs1_valor + ad1_valor + ax1_valor
         total_formateado = formatear_monto(total_calculado, incluir_signo=False)
         
-        # Solo reemplazar variables con formato {{VARIABLE}} (llaves dobles y mayúsculas)
-        # Nombre
-        reemplazos['{{Name1}}'] = nombre.upper()
+        # Solo reemplazar variables con formato {{VARIABLE}} (llaves dobles)
+        # Agregar variaciones de mayúsculas/minúsculas por si el template usa formato distinto
+        nombre_upper = nombre.upper()
+        paciente_upper = paciente.upper() if paciente else ''
+        telefono_valor = telefono if telefono else ''
+        
+        # Nombre - múltiples variaciones
+        for k in ['{{Name1}}', '{{name1}}', '{{NAME1}}', '{{nombre}}', '{{NOMBRE}}']:
+            reemplazos[k] = nombre_upper
         
         # Cédula
-        reemplazos['{{Cedu1}}'] = cedula
+        for k in ['{{Cedu1}}', '{{cedu1}}', '{{CEDU1}}', '{{cedula}}', '{{CEDULA}}']:
+            reemplazos[k] = cedula
         
-        # Teléfono - asegurar que siempre se reemplace, incluso si está vacío
-        telefono_valor = telefono if telefono else ''
-        reemplazos['{{Num1}}'] = telefono_valor
+        # Teléfono
+        for k in ['{{Num1}}', '{{num1}}', '{{NUM1}}', '{{telefono}}', '{{TELEFONO}}', '{{phone}}']:
+            reemplazos[k] = telefono_valor
         
         # Banco
-        reemplazos['{{banco1}}'] = banco
+        for k in ['{{banco1}}', '{{banco}}', '{{BANCO}}']:
+            reemplazos[k] = banco
         
-        # Número de cuenta bancaria
-        reemplazos['{{nbanco1}}'] = cuenta_bancaria
-        
-        # Cuenta bancaria
-        reemplazos['{{cuenta1}}'] = cuenta_bancaria
+        # Número de cuenta bancaria / Cuenta bancaria
+        for k in ['{{nbanco1}}', '{{cuenta1}}', '{{cuentaBancaria}}', '{{CUENTABANCARIA}}']:
+            reemplazos[k] = cuenta_bancaria
         
         # Mes y año
-        reemplazos['{{mes1}}'] = fecha_texto
+        for k in ['{{mes1}}', '{{mes}}', '{{MES}}', '{{fecha}}']:
+            reemplazos[k] = fecha_texto
         
         # Total/Valor
-        reemplazos['{{valor1}}'] = total_formateado
-        reemplazos['{{total1}}'] = total_formateado
+        for k in ['{{valor1}}', '{{total1}}', '{{valor}}', '{{total}}', '{{VALOR}}', '{{TOTAL}}']:
+            reemplazos[k] = total_formateado
         
         # Paciente
-        paciente_valor = paciente.upper() if paciente else ''
-        reemplazos['{{paciente1}}'] = paciente_valor
+        for k in ['{{paciente1}}', '{{paciente}}', '{{PACIENTE}}']:
+            reemplazos[k] = paciente_upper
         
         # Variable sf1: Sueldo proporcional (NO incluye bono)
-        reemplazos['{{sf1}}'] = sf1_formateado
+        for k in ['{{sf1}}', '{{SF1}}', '{{sueldoProporcional}}']:
+            reemplazos[k] = sf1_formateado
         
         # Días trabajados - mantener texto descriptivo y variable con llaves
         dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
         reemplazos['MES COMPLETO'] = dias_texto
         reemplazos['30 DÍAS'] = dias_texto
         reemplazos['30 DIAS'] = dias_texto
-        reemplazos['{{dias1}}'] = str(dias_num)
+        for k in ['{{dias1}}', '{{dias}}', '{{DIAS}}', '{{diasTrabajados}}']:
+            reemplazos[k] = str(dias_num)
         
         # Variable dia1 y dia2 - dia1 es el día de inicio, dia2 es el último día del mes
         # Obtener diaInicio de los datos
@@ -1256,18 +1300,17 @@ def generate_cuenta_cobro():
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
         
-        # Variable bs1/sb1: Bono de seguridad (200.000)
-        # Variable principal: bs1
-        reemplazos['{{bs1}}'] = bs1_formateado
-        # Variable alternativa: sb1 (usada en el template)
-        reemplazos['{{sb1}}'] = bs1_formateado
+        # Variable bs1/sb1: Bono de seguridad
+        for k in ['{{bs1}}', '{{sb1}}', '{{BS1}}', '{{bonoSeguridad}}']:
+            reemplazos[k] = bs1_formateado
         
-        # Variable ad1: Adicionales
-        reemplazos['{{ad1}}'] = ad1_formateado
-        # NO reemplazar "ADICIONALES" - debe mantenerse como texto descriptivo
+        # Variable ad1: Adicionales (turnos descansos)
+        for k in ['{{ad1}}', '{{AD1}}', '{{adicionales}}']:
+            reemplazos[k] = ad1_formateado
         
         # Variable ax1: Auxilio de transporte
-        reemplazos['{{ax1}}'] = ax1_formateado
+        for k in ['{{ax1}}', '{{AX1}}', '{{auxilioTransporte}}']:
+            reemplazos[k] = ax1_formateado
         
         # Limpiar duplicaciones de texto comunes ANTES de reemplazar
         # Duplicaciones de año - múltiples variaciones (ordenar por longitud descendente)
