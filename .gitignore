@@ -1,4 +1,6 @@
 __pycache__/
+# Archivos temporales de Word (ej: ~$documento.docx)
+*.tmp
 *.pyc
 *.pyo
 *.pyd

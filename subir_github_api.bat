@@ -32,7 +32,9 @@ git remote add origin https://%GITHUB_TOKEN%@github.com/%GITHUB_USER%/%GITHUB_RE
 
 echo.
 echo 📋 Agregando archivos de la API a Git...
-git add app.py requirements.txt render.yaml README.md .gitignore templates/hv.docx templates/cobro_*.docx templates/contrato*.docx ANALISIS-DATOS.md
+REM Incluir templates - Word cuenta de cobro modificado con {{variables}}, HV, contrato
+git add app.py requirements.txt render.yaml README.md .gitignore ANALISIS-DATOS.md
+git add "templates/cobro_ 2026.docx" templates/cobro_8h.docx templates/contrato.docx templates/hv.docx
 
 REM Verificar si hay cambios para subir
 git diff --cached --quiet

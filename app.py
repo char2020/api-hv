@@ -1207,114 +1207,38 @@ def generate_cuenta_cobro():
         total_calculado = sf1_valor + bs1_valor + ad1_valor + ax1_valor
         total_formateado = formatear_monto(total_calculado, incluir_signo=False)
         
-        # Solo reemplazar variables con formato {{VARIABLE}} (llaves dobles)
-        # Agregar variaciones de mayúsculas/minúsculas por si el template usa formato distinto
+        # SOLO reemplazar variables {{VARIABLE}} - no tocar texto normal
+        # El template Word usa placeholders entre llaves dobles
         nombre_upper = nombre.upper()
         paciente_upper = paciente.upper() if paciente else ''
         telefono_valor = telefono if telefono else ''
         
-        # Nombre - con y sin llaves {{ }} (el template puede usar Name1 sin llaves)
-        for k in ['{{Name1}}', '{{name1}}', '{{NAME1}}', '{{nombre}}', '{{NOMBRE}}', 'Name1', 'name1', 'NAME1']:
-            reemplazos[k] = nombre_upper
+        # Variables del template (solo formato {{variable}})
+        reemplazos['{{Name1}}'] = nombre_upper
+        reemplazos['{{Cedu1}}'] = cedula
+        reemplazos['{{Num1}}'] = telefono_valor
+        reemplazos['{{banco1}}'] = banco
+        reemplazos['{{nbanco1}}'] = cuenta_bancaria
+        reemplazos['{{mes1}}'] = fecha_texto
+        reemplazos['{{valor1}}'] = total_formateado
+        reemplazos['{{paciente1}}'] = paciente_upper
+        reemplazos['{{sf1}}'] = sf1_formateado
+        reemplazos['{{sb1}}'] = bs1_formateado
+        reemplazos['{{ad1}}'] = ad1_formateado
+        reemplazos['{{ax1}}'] = ax1_formateado
         
-        # Cédula
-        for k in ['{{Cedu1}}', '{{cedu1}}', '{{CEDU1}}', '{{cedula}}', '{{CEDULA}}', 'Cedu1', 'cedu1', 'CEDU1']:
-            reemplazos[k] = cedula
-        
-        # Teléfono
-        for k in ['{{Num1}}', '{{num1}}', '{{NUM1}}', '{{telefono}}', '{{TELEFONO}}', '{{phone}}', 'Num1', 'num1', 'NUM1']:
-            reemplazos[k] = telefono_valor
-        
-        # Cedu1 Num1 (combinado, ej: "C.C: Cedu1 Num1") - reemplazar ANTES que Cedu1 y Num1 por separado
-        reemplazos['Cedu1 Num1'] = f'{cedula} {telefono_valor}'
-        reemplazos['Cedu1  Num1'] = f'{cedula} {telefono_valor}'
-        
-        # Banco (no usar 'banco' solo - coincide dentro de 'Bancolombia')
-        for k in ['{{banco1}}', '{{banco}}', '{{BANCO}}', 'banco1', 'BANCO1']:
-            reemplazos[k] = banco
-        
-        # Número de cuenta bancaria (no usar 'cuenta' solo - coincide en otras palabras)
-        for k in ['{{nbanco1}}', '{{cuenta1}}', '{{cuentaBancaria}}', '{{CUENTABANCARIA}}', 'nbanco1', 'cuenta1', 'NBANCO1']:
-            reemplazos[k] = cuenta_bancaria
-        
-        # Mes y año (no usar 'mes' solo - coincide dentro de 'meses')
-        for k in ['{{mes1}}', '{{mes}}', '{{MES}}', '{{fecha}}', 'mes1', 'MES1']:
-            reemplazos[k] = fecha_texto
-        
-        # Total/Valor
-        for k in ['{{valor1}}', '{{total1}}', '{{valor}}', '{{total}}', '{{VALOR}}', '{{TOTAL}}', 'valor1', 'total1', 'valor', 'total', 'VALOR', 'TOTAL']:
-            reemplazos[k] = total_formateado
-        
-        # Paciente
-        for k in ['{{paciente1}}', '{{paciente}}', '{{PACIENTE}}', 'paciente1', 'paciente', 'PACIENTE']:
-            reemplazos[k] = paciente_upper
-        
-        # Variable sf1: Sueldo proporcional (NO incluye bono)
-        for k in ['{{sf1}}', '{{SF1}}', '{{sueldoProporcional}}', 'sf1', 'SF1']:
-            reemplazos[k] = sf1_formateado
-        
-        # Días trabajados - mantener texto descriptivo y variable con llaves
+        # Días trabajados - MES COMPLETO / 30 DÍAS en tabla (texto que puede variar)
         dias_texto = f"{dias_num} DÍAS" if dias_num < 30 else 'MES COMPLETO'
         reemplazos['MES COMPLETO'] = dias_texto
         reemplazos['30 DÍAS'] = dias_texto
         reemplazos['30 DIAS'] = dias_texto
-        for k in ['{{dias1}}', '{{dias}}', '{{DIAS}}', '{{diasTrabajados}}', 'dias1', 'dias', 'DIAS']:
-            reemplazos[k] = str(dias_num)
+        reemplazos['{{dias1}}'] = str(dias_num)
         
-        # Variable dia1 y dia2 - dia1 es el día de inicio, dia2 es el último día del mes
-        # Obtener diaInicio de los datos
+        # dia1 y dia2 - solo {{dia1}} {{dia2}}
         dia_inicio = data.get('diaInicio', '1').strip() if data.get('diaInicio') else '1'
-        # dia2 debe ser el último día del mes (ej: enero=31, febrero=28)
         dia_fin = str(dias_del_mes)
-        
-        # dia1 siempre es el día de inicio - múltiples variaciones para asegurar el reemplazo
-        # Agregar espacios alrededor para evitar que quede pegado
-        reemplazos['dia1'] = f' {dia_inicio} '  # Agregar espacios alrededor
-        reemplazos['DIA1'] = f' {dia_inicio} '
-        reemplazos['{dia1}'] = dia_inicio
         reemplazos['{{dia1}}'] = dia_inicio
-        reemplazos['[dia1]'] = dia_inicio
-        reemplazos['<<dia1>>'] = dia_inicio
-        reemplazos[' dia1 '] = f' {dia_inicio} '  # Mantener espacios
-        reemplazos[' DIA1 '] = f' {dia_inicio} '
-        reemplazos['dia1 '] = f' {dia_inicio} '  # Mantener espacio al final
-        reemplazos[' dia1'] = f' {dia_inicio} '  # Mantener espacio al inicio
-        reemplazos['diaInicio'] = dia_inicio
-        reemplazos['dia_inicio'] = dia_inicio
-        
-        # dia2 siempre es el último día del mes - múltiples variaciones para asegurar el reemplazo
-        # Agregar espacios alrededor para evitar que quede pegado
-        reemplazos['dia2'] = f' {dia_fin} '  # Último día del mes (ej: enero=31, febrero=28)
-        reemplazos['DIA2'] = f' {dia_fin} '
-        reemplazos['{dia2}'] = dia_fin
         reemplazos['{{dia2}}'] = dia_fin
-        reemplazos['[dia2]'] = dia_fin
-        reemplazos['<<dia2>>'] = dia_fin
-        reemplazos[' dia2 '] = f' {dia_fin} '  # Mantener espacios
-        reemplazos[' DIA2 '] = f' {dia_fin} '
-        reemplazos['dia2 '] = f' {dia_fin} '  # Mantener espacio al final
-        reemplazos[' dia2'] = f' {dia_fin} '  # Mantener espacio al inicio
-        reemplazos['diaFin'] = dia_fin
-        reemplazos['dia_fin'] = dia_fin
-        
-        # Patrones comunes con "al" para reemplazar correctamente
-        reemplazos[f'dia1 al dia2'] = f'{dia_inicio} al {dia_fin}'
-        reemplazos[f'DIA1 AL DIA2'] = f'{dia_inicio} al {dia_fin}'
-        reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
-        reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
-        reemplazos[f'dia1al dia2'] = f'{dia_inicio} al {dia_fin}'
-        
-        # Variable bs1/sb1: Bono de seguridad
-        for k in ['{{bs1}}', '{{sb1}}', '{{BS1}}', '{{bonoSeguridad}}', 'bs1', 'sb1', 'BS1', 'SB1']:
-            reemplazos[k] = bs1_formateado
-        
-        # Variable ad1: Adicionales (turnos descansos)
-        for k in ['{{ad1}}', '{{AD1}}', '{{adicionales}}', 'ad1', 'AD1']:
-            reemplazos[k] = ad1_formateado
-        
-        # Variable ax1: Auxilio de transporte
-        for k in ['{{ax1}}', '{{AX1}}', '{{auxilioTransporte}}', 'ax1', 'AX1']:
-            reemplazos[k] = ax1_formateado
         
         # Limpiar duplicaciones de texto comunes ANTES de reemplazar
         # Duplicaciones de año - múltiples variaciones (ordenar por longitud descendente)
