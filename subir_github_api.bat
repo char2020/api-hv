@@ -33,7 +33,7 @@ git remote add origin https://%GITHUB_TOKEN%@github.com/%GITHUB_USER%/%GITHUB_RE
 echo.
 echo 📋 Agregando archivos de la API a Git...
 REM Incluir templates - Word cuenta de cobro modificado con {{variables}}, HV, contrato
-git add app.py requirements.txt render.yaml README.md .gitignore ANALISIS-DATOS.md
+git add app.py requirements.txt render.yaml README.md .gitignore ANALISIS-DATOS.md GOOGLE_DRIVE_SETUP.md obtener-token-drive.bat
 git add "templates/cobro_ 2026.docx" templates/cobro_8h.docx templates/contrato.docx templates/hv.docx
 
 REM Verificar si hay cambios para subir

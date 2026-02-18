@@ -15,3 +15,5 @@ venv/
 client_secret*.json
 token.json
 credentials.json
+service_account.json
+service-account-drive.json

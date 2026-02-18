@@ -14,6 +14,7 @@ import time
 from datetime import datetime
 try:
     from google.oauth2.credentials import Credentials
+    from google.oauth2 import service_account as google_service_account
     from google_auth_oauthlib.flow import InstalledAppFlow, Flow
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseUpload
@@ -1643,35 +1644,59 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '')  # ID de la carpeta raíz en Google Drive
 
 def get_google_drive_service():
-    """Obtiene el servicio de Google Drive usando credenciales. Retorna (service, err_detail) o (None, mensaje) si falla."""
+    """Obtiene el servicio de Google Drive. Prioridad: 1) Service Account (sin OAuth), 2) Token OAuth usuario."""
     try:
-        # Intentar cargar credenciales desde variable de entorno (token JSON)
+        import json as _json
+        # --- 1) Service Account (recomendado: sin token, sin OAuth, solo JSON) ---
+        sa_json = os.getenv('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON', None)
+        if sa_json:
+            try:
+                sa_dict = _json.loads(sa_json)
+                creds = google_service_account.Credentials.from_service_account_info(sa_dict, scopes=SCOPES)
+                service = build('drive', 'v3', credentials=creds)
+                return service, None
+            except _json.JSONDecodeError as e:
+                return None, f'GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: JSON inválido: {e}'
+            except Exception as e:
+                return None, f'Service Account Drive: {e}'
+        # Buscar archivo service account en api/ o raíz (ej. descargado de Google Cloud)
+        for name in ('service_account.json', 'service-account-drive.json'):
+            for base in (os.path.dirname(__file__), os.path.dirname(os.path.dirname(__file__))):
+                path = os.path.join(base, name)
+                if os.path.isfile(path):
+                    try:
+                        creds = google_service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
+                        service = build('drive', 'v3', credentials=creds)
+                        return service, None
+                    except Exception as e:
+                        return None, f'Service Account en {path}: {e}'
+
+        # --- 2) OAuth de usuario (token que hay que renovar) ---
         creds_json = os.getenv('GOOGLE_DRIVE_CREDENTIALS', None)
         if creds_json:
-            import json
             try:
-                creds_dict = json.loads(creds_json)
+                creds_dict = _json.loads(creds_json)
                 creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
-            except json.JSONDecodeError as e:
+            except _json.JSONDecodeError as e:
                 return None, f'GOOGLE_DRIVE_CREDENTIALS tiene JSON inválido: {e}'
         else:
-            # Intentar cargar desde archivo token.json
             token_path = os.path.join(os.path.dirname(__file__), 'token.json')
             if os.path.exists(token_path):
                 creds = Credentials.from_authorized_user_file(token_path, SCOPES)
             else:
-                return None, 'No hay credenciales: falta GOOGLE_DRIVE_CREDENTIALS (variable de entorno) o token.json'
-        
-        # Si las credenciales están expiradas, intentar refrescar
+                return None, (
+                    'No hay credenciales Drive. Opción fácil: usa Service Account. En Google Cloud: '
+                    'APIs & Services → Credentials → Create credentials → Service account → Keys → Add key → JSON. '
+                    'Pega el contenido del JSON en Render como GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON (o pon el archivo en api/ como service_account.json).'
+                )
         if not creds.valid:
             if creds.expired and creds.refresh_token:
                 try:
                     creds.refresh(requests.Request())
                 except Exception as refresh_err:
-                    return None, f'Token expirado y no se pudo renovar. Visita /get-drive-token para autorizar de nuevo: {refresh_err}'
+                    return None, f'Token expirado. Renueva en /get-drive-token: {refresh_err}'
             else:
                 return None, 'Token expirado y sin refresh_token. Visita /get-drive-token para autorizar de nuevo.'
-        
         service = build('drive', 'v3', credentials=creds)
         return service, None
     except Exception as e:
@@ -2062,7 +2087,32 @@ def test_upload_drive():
         }), 500
 
 
+# --- Diagnóstico Drive: comprobar si la Service Account está configurada ---
+@app.route('/drive-status', methods=['GET'])
+def drive_status():
+    """Indica si Drive está configurado (Service Account o OAuth) y si el servicio se puede crear."""
+    sa_set = bool(os.getenv('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON', '').strip())
+    service, err = get_google_drive_service()
+    return jsonify({
+        'service_account_configured': sa_set,
+        'drive_ok': service is not None,
+        'error': err if err else None,
+    })
+
+
 # --- OAuth para cliente Web: obtener token desde el navegador (una sola vez) ---
+@app.route('/drive-uri-info', methods=['GET'])
+def drive_uri_info():
+    """Muestra el URI exacto que debes añadir en Google Cloud (para evitar redirect_uri_mismatch)"""
+    base = request.host_url.rstrip('/')
+    uri = 'http://localhost:5000/oauth2callback' if ('localhost' in base or '127.0.0.1' in base) else f'{base}/oauth2callback'
+    return f'''<h2>URI para Google Cloud</h2>
+    <p>Copia y pega este URI en Google Cloud Console → Credenciales → tu cliente Web → URIs de redireccionamiento autorizados:</p>
+    <p><code style="background:#eee;padding:8px;display:block;word-break:break-all">{uri}</code></p>
+    <p><button onclick="navigator.clipboard.writeText('{uri}');alert('Copiado')">Copiar</button></p>
+    <p><a href="/get-drive-token">Continuar a obtener token</a></p>''', 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
 @app.route('/get-drive-token', methods=['GET'])
 def get_drive_token():
     """
@@ -2106,10 +2156,12 @@ def get_drive_token():
             {'Content-Type': 'text/html; charset=utf-8'}
         )
 
-    # Redirect URI debe coincidir con lo configurado en la consola (cliente Web)
-    use_https = request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure
+    # Redirect URI: en local SIEMPRE usar localhost:5000 para que coincida con Google Cloud
     base_url = request.host_url.rstrip('/')
-    redirect_uri = f'{base_url}/oauth2callback'
+    if 'localhost' in base_url or '127.0.0.1' in base_url:
+        redirect_uri = 'http://localhost:5000/oauth2callback'
+    else:
+        redirect_uri = f'{base_url}/oauth2callback'
 
     client_config = {
         'web': {
@@ -2168,7 +2220,10 @@ def oauth2callback():
         return '<p>Faltan credenciales: archivo client_secret*.json o variables GOOGLE_DRIVE_CLIENT_ID/SECRET.</p>', 500
 
     base_url = request.host_url.rstrip('/')
-    redirect_uri = f'{base_url}/oauth2callback'
+    if 'localhost' in base_url or '127.0.0.1' in base_url:
+        redirect_uri = 'http://localhost:5000/oauth2callback'
+    else:
+        redirect_uri = f'{base_url}/oauth2callback'
     client_config = {
         'web': {
             'client_id': client_id,
@@ -2206,8 +2261,11 @@ def oauth2callback():
         else:
             html = (
                 '<h2>Token guardado</h2>'
-                '<p>El token de Google Drive se guardó en <code>token.json</code>.</p>'
-                '<p>Ya puedes cerrar esta pestaña y probar la subida con <code>/test-upload-drive</code>.</p>'
+                '<p>El token se guardó en <code>token.json</code>.</p>'
+                '<p><strong>Para Render:</strong> Copia el JSON de abajo y pégalo en Render → Environment → GOOGLE_DRIVE_CREDENTIALS</p>'
+                f'<textarea readonly style="width:100%;height:180px;font-family:monospace;font-size:11px">{token_json_str}</textarea>'
+                '<p><button onclick="navigator.clipboard.writeText(document.querySelector(\'textarea\').value);alert(\'¡Copiado! Pega en Render → GOOGLE_DRIVE_CREDENTIALS\')" style="padding:8px 16px;cursor:pointer;background:#4285f4;color:white;border:none;border-radius:4px">Copiar JSON</button></p>'
+                '<p><a href="/test-upload-drive">Probar subida a Drive</a></p>'
             )
         return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
     except Exception as e:

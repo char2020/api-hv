@@ -1,5 +1,49 @@
 # Configuración de Google Drive API
 
+## ✅ Opción más fácil: Service Account (sin OAuth, sin token, sin navegador)
+
+**Ventaja:** No hay que autorizar en el navegador ni renovar token. Un solo JSON y listo.
+
+**Si ya tienes la cuenta de servicio de Firebase** (`firebase-adminsdk-...@....iam.gserviceaccount.com`): usa ese mismo JSON. Solo asegúrate de tener **Google Drive API** habilitada en el mismo proyecto (paso 1).
+
+### Pasos
+
+1. **Google Cloud** (proyecto `generador-hojas-vida`) → [APIs & Services → Library](https://console.cloud.google.com/apis/library) → busca **Google Drive API** → **Enable**. (Si ya está habilitada, no hace falta.)
+2. **Credenciales:** Si no tienes Service Account, [Credentials](https://console.cloud.google.com/apis/credentials) → **+ Create Credentials** → **Service account** → crear → Keys → **Add key** → **Create new key** → **JSON**. Si usas la de Firebase, el JSON ya lo tienes.
+3. **En Render** → servicio **api-hv** → **Environment** → **Add Environment Variable**:
+   - **Key:** `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON`
+   - **Value:** pega **todo** el JSON (desde `{` hasta `}`, en una línea o con saltos, pero completo).
+4. Guarda. Render redesplegará.
+5. Comprueba: abre **https://api-hv.onrender.com/drive-status**. Debe salir `"service_account_configured": true` y `"drive_ok": true`.
+
+**Dónde quedan los archivos:** En el Drive de la **cuenta de servicio** (no en tu Drive personal). Para verlos:
+- Opción A: Entra a [Google Drive](https://drive.google.com) con la misma cuenta de Google del proyecto y comparte la carpeta raíz del proyecto con el email de la service account (ej. `nombre@proyecto.iam.gserviceaccount.com`), así los archivos pueden crearse en una carpeta que tú ves.
+- Opción B: La API devuelve enlaces públicos o con permiso "cualquiera con el enlace"; el admin puede abrir esos enlaces sin entrar al Drive de la service account.
+
+Si quieres que todo caiga en **tu** carpeta de Drive: crea una carpeta en tu Drive, compártela con el email de la service account (dar acceso de editor), copia el ID de la carpeta de la URL (`https://drive.google.com/drive/folders/ESTE_ES_EL_ID`) y en Render añade la variable **`GOOGLE_DRIVE_FOLDER_ID`** con ese ID.
+
+---
+
+## ⚠️ Si usas OAuth y ves "No hay credenciales" o "No se pudo conectar con Google Drive"
+
+**Causa:** En Render falta la variable `GOOGLE_DRIVE_CREDENTIALS` (el token). Si antes funcionaba, el token pudo haber expirado o perderse en un redeploy.
+
+**Solución rápida (5 min):**
+
+1. **En Google Cloud** → [Credenciales](https://console.cloud.google.com/apis/credentials) → tu cliente Web → **URIs de redireccionamiento autorizados** → **+ Agregar URI** → añade **exactamente** (copia y pega):
+   ```
+   http://localhost:5000/oauth2callback
+   ```
+   *(Si falla, añade también: `http://127.0.0.1:5000/oauth2callback`)*
+   **Guarda** los cambios (botón azul abajo).
+2. **En tu PC:** Ejecuta `obtener-token-drive.bat` (en la carpeta api) — abre la API y el navegador automáticamente
+3. Autoriza con tu cuenta de Google (donde quieres guardar los archivos)
+4. Haz clic en **"Copiar JSON"** en la página que aparece
+5. **En Render** → tu servicio → Environment → añade variable `GOOGLE_DRIVE_CREDENTIALS` y pega el JSON
+6. Guarda. Render redesplegará automáticamente.
+
+---
+
 ## Ubicación de la API en este proyecto
 
 | Dato | Valor |
