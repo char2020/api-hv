@@ -16,11 +16,22 @@
 4. Guarda. Render redesplegará.
 5. Comprueba: abre **https://api-hv.onrender.com/drive-status**. Debe salir `"service_account_configured": true` y `"drive_ok": true`.
 
-**Dónde quedan los archivos:** En el Drive de la **cuenta de servicio** (no en tu Drive personal). Para verlos:
-- Opción A: Entra a [Google Drive](https://drive.google.com) con la misma cuenta de Google del proyecto y comparte la carpeta raíz del proyecto con el email de la service account (ej. `nombre@proyecto.iam.gserviceaccount.com`), así los archivos pueden crearse en una carpeta que tú ves.
-- Opción B: La API devuelve enlaces públicos o con permiso "cualquiera con el enlace"; el admin puede abrir esos enlaces sin entrar al Drive de la service account.
+**⚠️ Para que los archivos aparezcan en TU correo (tu Drive) y no pidan "solicitar acceso":**
 
-Si quieres que todo caiga en **tu** carpeta de Drive: crea una carpeta en tu Drive, compártela con el email de la service account (dar acceso de editor), copia el ID de la carpeta de la URL (`https://drive.google.com/drive/folders/ESTE_ES_EL_ID`) y en Render añade la variable **`GOOGLE_DRIVE_FOLDER_ID`** con ese ID.
+Por defecto los archivos van al Drive de la **cuenta de servicio** (un robot). Para que caigan en **tu** Drive:
+
+1. Entra a [Google Drive](https://drive.google.com) con **tu correo** (el que quieres usar para ver los documentos).
+2. Crea una carpeta, por ejemplo **"Documentos ARL"** o **"Subidas App"**.
+3. Clic derecho en la carpeta → **Compartir**.
+4. En "Añadir personas y grupos" pega el email de la **cuenta de servicio** (el que está en el JSON, ej. `firebase-adminsdk-fbsvc@generador-hojas-vida.iam.gserviceaccount.com`).
+5. Dale permiso **Editor** → quita la casilla "Notificar a las personas" si no quieres → **Compartir**.
+6. Abre la carpeta y mira la URL: `https://drive.google.com/drive/folders/XXXXXXXX` → el **ID** es la parte `XXXXXXXX`.
+7. En **Render** → tu servicio **api-hv** → **Environment** → añade variable:
+   - **Key:** `GOOGLE_DRIVE_FOLDER_ID`
+   - **Value:** ese ID (solo el ID, sin la URL).
+8. Guarda. Render redesplegará.
+
+A partir de ahí, todas las subidas (carpetas por cliente) se crearán **dentro** de esa carpeta en tu Drive. No tendrás que "solicitar acceso": la carpeta es tuya y la app escribe en ella gracias al permiso que le diste a la cuenta de servicio.
 
 ---
 

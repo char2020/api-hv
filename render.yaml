@@ -7,4 +7,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        value: 1wWuTWQEqwnX1gwjmZtk81OtMedjiKygo
 

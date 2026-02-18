@@ -17,7 +17,7 @@ try:
     from google.oauth2 import service_account as google_service_account
     from google_auth_oauthlib.flow import InstalledAppFlow, Flow
     from googleapiclient.discovery import build
-    from googleapiclient.http import MediaIoBaseUpload
+    from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
     from googleapiclient.errors import HttpError
     GOOGLE_DRIVE_AVAILABLE = True
 except ImportError:
@@ -27,6 +27,7 @@ except ImportError:
     InstalledAppFlow = None
     build = None
     MediaIoBaseUpload = None
+    MediaIoBaseDownload = None
     HttpError = Exception
 
 app = Flask(__name__)
@@ -1926,6 +1927,61 @@ def upload_attachments_to_drive():
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
+
+
+@app.route('/drive-list-folder', methods=['GET'])
+def drive_list_folder():
+    """Lista archivos en una carpeta de Drive. Query: folder_id. Para que el admin descargue sin abrir Drive."""
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return jsonify({'error': 'Google Drive API no disponible'}), 503
+    folder_id = request.args.get('folder_id', '').strip()
+    if not folder_id:
+        return jsonify({'error': 'Falta folder_id'}), 400
+    service, err = get_google_drive_service()
+    if not service:
+        return jsonify({'error': err or 'No se pudo conectar a Drive'}), 500
+    try:
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            spaces='drive',
+            fields='files(id, name, mimeType)',
+            pageSize=100
+        ).execute()
+        items = results.get('files', [])
+        files = [{'id': f['id'], 'name': f.get('name', 'archivo'), 'mimeType': f.get('mimeType', '')} for f in items]
+        return jsonify({'files': files})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/drive-download', methods=['GET'])
+def drive_download():
+    """Descarga un archivo de Drive por ID. Query: file_id, file_name (opcional, para el nombre al guardar)."""
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return jsonify({'error': 'Google Drive API no disponible'}), 503
+    file_id = request.args.get('file_id', '').strip()
+    file_name = request.args.get('file_name', '').strip() or 'documento'
+    if not file_id:
+        return jsonify({'error': 'Falta file_id'}), 400
+    service, err = get_google_drive_service()
+    if not service:
+        return jsonify({'error': err or 'No se pudo conectar a Drive'}), 500
+    try:
+        request_dl = service.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request_dl)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=file_name,
+            mimetype='application/octet-stream'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # Mapeo de keys de anexos a prefijos de nombre en Drive (reutilizable)
