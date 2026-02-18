@@ -1643,35 +1643,42 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '')  # ID de la carpeta raíz en Google Drive
 
 def get_google_drive_service():
-    """Obtiene el servicio de Google Drive usando credenciales"""
+    """Obtiene el servicio de Google Drive usando credenciales. Retorna (service, err_detail) o (None, mensaje) si falla."""
     try:
         # Intentar cargar credenciales desde variable de entorno (token JSON)
         creds_json = os.getenv('GOOGLE_DRIVE_CREDENTIALS', None)
         if creds_json:
             import json
-            creds_dict = json.loads(creds_json)
-            creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
+            try:
+                creds_dict = json.loads(creds_json)
+                creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
+            except json.JSONDecodeError as e:
+                return None, f'GOOGLE_DRIVE_CREDENTIALS tiene JSON inválido: {e}'
         else:
             # Intentar cargar desde archivo token.json
             token_path = os.path.join(os.path.dirname(__file__), 'token.json')
             if os.path.exists(token_path):
                 creds = Credentials.from_authorized_user_file(token_path, SCOPES)
             else:
-                # Si no hay credenciales, retornar None (se manejará en el endpoint)
-                return None
+                return None, 'No hay credenciales: falta GOOGLE_DRIVE_CREDENTIALS (variable de entorno) o token.json'
         
         # Si las credenciales están expiradas, intentar refrescar
         if not creds.valid:
             if creds.expired and creds.refresh_token:
-                creds.refresh(requests.Request())
+                try:
+                    creds.refresh(requests.Request())
+                except Exception as refresh_err:
+                    return None, f'Token expirado y no se pudo renovar. Visita /get-drive-token para autorizar de nuevo: {refresh_err}'
+            else:
+                return None, 'Token expirado y sin refresh_token. Visita /get-drive-token para autorizar de nuevo.'
         
         service = build('drive', 'v3', credentials=creds)
-        return service
+        return service, None
     except Exception as e:
         import traceback
         print(f'Error obteniendo servicio de Google Drive: {e}')
         print(traceback.format_exc())
-        return None
+        return None, str(e)
 
 def create_or_get_folder(service, folder_name, parent_folder_id=None):
     """Crea una carpeta en Google Drive o retorna su ID si ya existe"""
@@ -1791,9 +1798,14 @@ def upload_attachments_to_drive():
             return jsonify({'error': 'No se proporcionaron anexos para subir'}), 400
         
         # Obtener servicio de Google Drive
-        service = get_google_drive_service()
+        service, err_detail = get_google_drive_service()
         if not service:
-            return jsonify({'error': 'No se pudo conectar con Google Drive. Verifica las credenciales.'}), 500
+            msg = 'No se pudo conectar con Google Drive.'
+            if err_detail:
+                msg += f' {err_detail}'
+            else:
+                msg += ' Verifica que GOOGLE_DRIVE_CREDENTIALS esté configurado en el servidor (o token.json en la carpeta api). Si antes funcionaba, el token pudo haber expirado: visita /get-drive-token para renovarlo.'
+            return jsonify({'error': msg}), 500
         
         # Crear nombre de carpeta: nombre_cliente_cedula
         folder_name = f"{client_name}_{client_id}".replace(' ', '_').replace('/', '_')
@@ -1930,7 +1942,7 @@ def delete_attachment_from_drive():
         # Obtener prefijo del nombre del archivo en Drive
         file_prefix = ATTACHMENT_KEY_TO_DRIVE_PREFIX.get(attachment_key, attachment_key)
         
-        service = get_google_drive_service()
+        service, _ = get_google_drive_service()
         if not service:
             return jsonify({'error': 'No se pudo conectar con Google Drive'}), 500
         
@@ -1986,14 +1998,13 @@ def test_upload_drive():
 
     try:
         # 1. Obtener servicio
-        service = get_google_drive_service()
+        service, err_detail = get_google_drive_service()
         if not service:
-            creds_env = 'GOOGLE_DRIVE_CREDENTIALS' if os.getenv('GOOGLE_DRIVE_CREDENTIALS') else None
-            token_path = os.path.join(os.path.dirname(__file__), 'token.json')
+            detail = err_detail or 'Verifica GOOGLE_DRIVE_CREDENTIALS (env) o token.json. Si antes funcionaba, el token pudo expirar: visita /get-drive-token para renovar.'
             return jsonify({
                 'success': False,
                 'error': 'No se pudo conectar con Google Drive',
-                'detail': 'Verifica: GOOGLE_DRIVE_CREDENTIALS (env) o token.json en la carpeta api. Ninguno encontrado o inválido.'
+                'detail': detail
             }), 500
 
         # 2. Crear un Word de prueba (tipo cuenta de cobro)
@@ -2064,15 +2075,33 @@ def get_drive_token():
     if not GOOGLE_DRIVE_AVAILABLE or Flow is None:
         return jsonify({'error': 'Google Auth no disponible. Instala google-auth-oauthlib.'}), 503
 
-    client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID', '').strip()
-    client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
+    client_id, client_secret = '', ''
+    import glob
+    api_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(api_dir)
+    for folder in [api_dir, parent_dir]:
+        for path in glob.glob(os.path.join(folder, 'client_secret*.json')):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = __import__('json').load(f)
+                web = data.get('web', {})
+                client_id = web.get('client_id', '')
+                client_secret = web.get('client_secret', '')
+                if client_id and client_secret:
+                    break
+            except Exception:
+                pass
+        if client_id and client_secret:
+            break
+    if not client_id or not client_secret:
+        client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID', '').strip()
+        client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
     if not client_id or not client_secret:
         return (
-            '<p>Faltan variables de entorno. En el servidor configura:</p>'
-            '<ul><li><b>GOOGLE_DRIVE_CLIENT_ID</b> = tu ID de cliente (Web)</li>'
-            '<li><b>GOOGLE_DRIVE_CLIENT_SECRET</b> = tu secreto del cliente (Web)</li></ul>'
-            '<p>En Google Cloud Console, en tu cliente Web, añade en "URIs de redirección":<br>'
-            '<code>http://localhost:5000/oauth2callback</code></p>',
+            '<p>Faltan credenciales. Configura GOOGLE_DRIVE_CLIENT_ID y GOOGLE_DRIVE_CLIENT_SECRET en Render, '
+            'o coloca el archivo <code>client_secret_*.json</code> en la carpeta api o raíz del proyecto.</p>'
+            '<p>En Google Cloud Console añade en "URIs de redirección":<br>'
+            '<code>https://api-hv.onrender.com/oauth2callback</code></p>',
             400,
             {'Content-Type': 'text/html; charset=utf-8'}
         )
@@ -2114,10 +2143,29 @@ def oauth2callback():
         error = request.args.get('error', 'Falta código')
         return f'<p>Error: {error}. No se recibió código de autorización.</p>', 400
 
-    client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID', '').strip()
-    client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
+    client_id, client_secret = '', ''
+    import glob
+    api_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(api_dir)
+    for folder in [api_dir, parent_dir]:
+        for path in glob.glob(os.path.join(folder, 'client_secret*.json')):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = __import__('json').load(f)
+                web = data.get('web', {})
+                client_id = web.get('client_id', '')
+                client_secret = web.get('client_secret', '')
+                if client_id and client_secret:
+                    break
+            except Exception:
+                pass
+        if client_id and client_secret:
+            break
     if not client_id or not client_secret:
-        return '<p>Faltan GOOGLE_DRIVE_CLIENT_ID o GOOGLE_DRIVE_CLIENT_SECRET.</p>', 500
+        client_id = os.getenv('GOOGLE_DRIVE_CLIENT_ID', '').strip()
+        client_secret = os.getenv('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
+    if not client_id or not client_secret:
+        return '<p>Faltan credenciales: archivo client_secret*.json o variables GOOGLE_DRIVE_CLIENT_ID/SECRET.</p>', 500
 
     base_url = request.host_url.rstrip('/')
     redirect_uri = f'{base_url}/oauth2callback'
@@ -2143,16 +2191,25 @@ def oauth2callback():
             'client_secret': creds.client_secret,
             'scopes': list(creds.scopes) if creds.scopes else SCOPES,
         }
+        import json
         with open(token_path, 'w', encoding='utf-8') as f:
-            import json
             json.dump(token_data, f, indent=2)
-        return (
-            '<h2>Token guardado</h2>'
-            '<p>El token de Google Drive se guardó en <code>token.json</code>.</p>'
-            '<p>Ya puedes cerrar esta pestaña y probar la subida con <code>/test-upload-drive</code>.</p>',
-            200,
-            {'Content-Type': 'text/html; charset=utf-8'}
-        )
+        token_json_str = json.dumps(token_data)
+        is_production = 'localhost' not in request.host
+        if is_production:
+            html = (
+                '<h2>Token guardado</h2>'
+                '<p><strong>En Render el token no persiste.</strong> Copia el JSON de abajo y pégalo en la variable de entorno <code>GOOGLE_DRIVE_CREDENTIALS</code> en Render → Environment:</p>'
+                f'<textarea readonly style="width:100%;height:200px;font-family:monospace;font-size:12px">{token_json_str}</textarea>'
+                '<p><button onclick="navigator.clipboard.writeText(document.querySelector(\'textarea\').value);alert(\'Copiado\')">Copiar al portapapeles</button></p>'
+            )
+        else:
+            html = (
+                '<h2>Token guardado</h2>'
+                '<p>El token de Google Drive se guardó en <code>token.json</code>.</p>'
+                '<p>Ya puedes cerrar esta pestaña y probar la subida con <code>/test-upload-drive</code>.</p>'
+            )
+        return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
     except Exception as e:
         import traceback
         return f'<pre>Error guardando token: {e}\n{traceback.format_exc()}</pre>', 500

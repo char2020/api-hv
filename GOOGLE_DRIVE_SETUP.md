@@ -1,11 +1,22 @@
 # Configuración de Google Drive API
 
+## Ubicación de la API en este proyecto
+
+| Dato | Valor |
+|------|-------|
+| **URL de la API** | `https://api-hv.onrender.com` |
+| **Repositorio** | `char2020/api-hv` (GitHub) |
+| **Despliegue** | Render (render.yaml) |
+| **OAuth redirect** | `https://api-hv.onrender.com/oauth2callback` |
+
+---
+
 ## Pasos para configurar la subida de anexos a Google Drive
 
 ### 1. Habilitar Google Drive API
 
 1. Ve a [Google Cloud Console](https://console.cloud.google.com/)
-2. Selecciona tu proyecto o crea uno nuevo
+2. Selecciona tu proyecto **generador-hojas-vida**
 3. Ve a "APIs & Services" > "Library"
 4. Busca "Google Drive API" y habilítala
 
@@ -18,29 +29,29 @@ Sirve para que todo funcione desde la web sin descargar archivos de escritorio.
 ### 2A. Configurar el cliente Web en Google Cloud
 
 1. Ve a [Credenciales](https://console.cloud.google.com/apis/credentials).
-2. En **"IDs de clientes de OAuth 2.0"**, entra a tu cliente **"Web client (auto created by Google Service)"** (o tu aplicación web).
-3. En **"URIs de redireccionamiento autorizados"** haz clic en **"Agregar URI"** y añade exactamente:
-   - Para probar en local: `http://localhost:5000/oauth2callback`
-   - Si tu API está en un servidor: `https://tu-dominio-de-api.com/oauth2callback`
+2. En **"IDs de clientes de OAuth 2.0"**, entra a tu cliente **"Web client (auto created by Google Service)"**.
+3. En **"URIs de redireccionamiento autorizados"** haz clic en **"+ Agregar URI"** y añade:
+   - **Producción (Render):** `https://api-hv.onrender.com/oauth2callback`
+   - **Local (pruebas):** `http://localhost:5000/oauth2callback`
 4. Guarda los cambios.
 
-### 3A. Poner ID y secreto del cliente en el servidor
+### 3A. Poner ID y secreto del cliente en Render
 
-En las variables de entorno de tu API (Render, tu PC, etc.) configura:
-
-- **`GOOGLE_DRIVE_CLIENT_ID`**: el ID de cliente (ej: `572579001678-....apps.googleusercontent.com`).
-- **`GOOGLE_DRIVE_CLIENT_SECRET`**: el secreto del cliente.  
-  Si en la consola dice "Ya no se pueden ver ni descargar los secretos", haz clic en **"Agregar secreto"**, crea uno nuevo y copia el valor (solo se muestra una vez).
+1. Entra a [Render Dashboard](https://dashboard.render.com/) → tu servicio **api-hv** (o hv-generator-api).
+2. Ve a **Environment** y agrega:
+   - **`GOOGLE_DRIVE_CLIENT_ID`**: tu ID de cliente (de Google Cloud → Credenciales)
+   - **`GOOGLE_DRIVE_CLIENT_SECRET`**: el secreto (si no lo ves, crea uno nuevo con "Agregar secreto" en Google Cloud).
+3. Guarda y espera a que Render redespliegue.
 
 ### 4A. Obtener el token desde el navegador (una sola vez)
 
-1. Arranca tu API (por ejemplo `python app.py` en la carpeta `api` o despliega en Render).
-2. En el navegador abre: **`http://localhost:5000/get-drive-token`** (o `https://tu-api.com/get-drive-token`).
-3. Te redirigirá a Google. Inicia sesión con la cuenta de Google donde quieras guardar los archivos en Drive y acepta los permisos.
-4. Google te redirigirá a `/oauth2callback` y la API guardará el token en **`token.json`** en la carpeta `api`.
-5. Verás una página que dice "Token guardado". A partir de ahí la subida a Drive debería funcionar (prueba con `/test-upload-drive`).
-
-En producción (Render, etc.) puedes copiar el contenido de `token.json` y guardarlo en la variable de entorno **`GOOGLE_DRIVE_CREDENTIALS`** para no depender del archivo.
+1. En Render (producción): abre **https://api-hv.onrender.com/get-drive-token**  
+   *(Puede tardar 1–2 min si el servidor está dormido)*
+2. En local: abre **http://localhost:5000/get-drive-token**
+3. Te redirigirá a Google. Inicia sesión con la cuenta donde quieras guardar los archivos en Drive y acepta los permisos.
+4. Google te redirigirá a `/oauth2callback` y la API guardará el token.
+5. En **Render**: el archivo `token.json` no persiste. Debes copiar el JSON que aparece en pantalla y guardarlo en la variable de entorno **`GOOGLE_DRIVE_CREDENTIALS`** en Render → Environment.
+6. En **local**: el token se guarda en `token.json` en la carpeta `api`; prueba con `/test-upload-drive`.
 
 ---
 
@@ -116,7 +127,7 @@ Cuando un cliente sube anexos, se crea la siguiente estructura:
 
 Puedes usar el endpoint de prueba para subir un Word de prueba a Drive:
 
-- **GET o POST** `https://tu-api.com/test-upload-drive`
+- **GET o POST** `https://api-hv.onrender.com/test-upload-drive`
 
 Si todo está bien configurado, la respuesta será algo como:
 

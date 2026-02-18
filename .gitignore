@@ -11,3 +11,7 @@ venv/
 *.docx
 !templates/*.docx
 
+# Credenciales Google (no subir a GitHub)
+client_secret*.json
+token.json
+credentials.json
