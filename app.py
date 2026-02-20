@@ -106,7 +106,7 @@ def root():
         "message": "API de Generación de Hojas de Vida funcionando",
         "endpoints": {
             "/health": "GET - Verificar estado del servidor",
-            "/upload-attachments": "POST - Subir anexos a Google Drive o Firebase (clientName, clientId, attachments). Primero Drive; no requiere activar Firebase Storage.",
+            "/upload-attachments": "POST - Subir anexos: Google Drive, Cloudflare R2 o Firebase (clientName, clientId, attachments).",
             "/drive-download": "GET - Descargar archivo (file_id, file_name). Firebase: anexos/...; Drive: ID de archivo. Para admin/solicitudes (Fabian).",
             "/list-folder": "GET - Listar archivos de carpeta (folder_id). Firebase: anexos/...; Drive: ID de carpeta. Para admin/solicitudes (Fabian).",
             "/generate-word": "POST - Generar documento Word (Hoja de Vida)",
@@ -119,6 +119,21 @@ def root():
 def health():
     """Endpoint de salud para verificar que el servidor está funcionando"""
     return jsonify({"status": "ok", "message": "API funcionando correctamente"})
+
+@app.route('/storage-status', methods=['GET'])
+def storage_status():
+    """Diagnóstico: qué backends de subida están configurados (Drive, R2, Firebase)."""
+    drive = get_drive_service() is not None
+    r2_client = get_r2_client() is not None
+    r2_bucket = bool(get_r2_bucket_name())
+    r2 = r2_client and r2_bucket
+    firebase = get_firebase_bucket() is not None
+    return jsonify({
+        'drive_configured': drive,
+        'r2_configured': r2,
+        'firebase_configured': firebase,
+        'message': 'Configura al menos uno para que las subidas funcionen.',
+    })
 
 @app.errorhandler(413)
 def request_entity_too_large(e):
@@ -169,6 +184,38 @@ def get_drive_service():
         print('Drive init error:', e)
         _drive_service = None
         return None
+
+_r2_client = None
+
+def get_r2_client():
+    """Cliente S3-compatible para Cloudflare R2. Requiere R2_S3_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME."""
+    global _r2_client
+    if _r2_client is not None:
+        return _r2_client
+    endpoint = os.getenv('R2_S3_ENDPOINT', '').strip()
+    access_key = os.getenv('R2_ACCESS_KEY_ID', '').strip()
+    secret_key = os.getenv('R2_SECRET_ACCESS_KEY', '').strip()
+    if not endpoint or not access_key or not secret_key:
+        return None
+    try:
+        import boto3
+        from botocore.config import Config
+        _r2_client = boto3.client(
+            's3',
+            endpoint_url=endpoint.rstrip('/'),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name='auto',
+            config=Config(signature_version='s3v4')
+        )
+        return _r2_client
+    except Exception as e:
+        print('R2 init error:', e)
+        _r2_client = None
+        return None
+
+def get_r2_bucket_name():
+    return os.getenv('R2_BUCKET_NAME', '').strip()
 
 def get_firebase_bucket():
     """Inicializa Firebase Admin (una vez) y devuelve el bucket de Storage."""
@@ -264,6 +311,68 @@ def _upload_attachments_to_drive(client_name, client_id, attachments):
         print('Drive upload error:', e)
         return None
 
+def _upload_attachments_to_r2(client_name, client_id, attachments):
+    """Sube anexos a Cloudflare R2 (S3 API). folder_id = r2/anexos/Nombre_123 para list-folder y drive-download."""
+    client = get_r2_client()
+    bucket = get_r2_bucket_name()
+    if not client or not bucket:
+        return None
+    name = re.sub(r'[\s/\\?*:]+', '_', client_name).strip('_') or 'Cliente'
+    cid = re.sub(r'[\s/\\?*:]+', '_', client_id).strip('_') or ''
+    folder_name = f"{name}_{cid}".replace('__', '_').strip('_') or 'cliente_doc'
+    prefix = f'anexos/{folder_name}/'
+    uploaded_files = []
+    errors = []
+    try:
+        for key, att in attachments.items():
+            if not att or not att.get('dataUrl'):
+                continue
+            label = ATTACHMENT_NAMES.get(key, key)
+            fname = (att.get('name') or 'documento').strip()
+            ext = fname.split('.')[-1] if '.' in fname else 'pdf'
+            if ext.lower() not in ('pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'):
+                ext = 'pdf'
+            file_name = f'{label}.{ext}'
+            key_path = prefix + file_name
+            raw, content_type = _data_url_to_bytes(att['dataUrl'])
+            if raw is None:
+                errors.append(f'Error decodificando {key} ({file_name})')
+                continue
+            try:
+                client.upload_fileobj(
+                    io.BytesIO(raw),
+                    bucket,
+                    key_path,
+                    ExtraArgs={'ContentType': content_type or 'application/octet-stream'}
+                )
+                file_id_r2 = f'r2/{key_path}'
+                from urllib.parse import quote
+                api_base = os.getenv('API_PUBLIC_URL', 'https://api-hv.onrender.com').rstrip('/')
+                web_link = f'{api_base}/drive-download?file_id={quote(file_id_r2, safe="")}&file_name={quote(file_name, safe="")}'
+                uploaded_files.append({
+                    'key': key,
+                    'name': file_name,
+                    'file_id': file_id_r2,
+                    'web_link': web_link,
+                })
+            except Exception as e:
+                err_msg = str(e).split('\n')[0][:200] if e else 'Error desconocido'
+                errors.append(f'Error subiendo {key} ({file_name}): {err_msg}')
+        folder_id_r2 = f'r2/{prefix.rstrip("/")}'
+        return {
+            'success': True,
+            'folder_name': folder_name,
+            'folder_id': folder_id_r2,
+            'drive_folder_link': folder_id_r2,
+            'uploaded_files': uploaded_files,
+            'errors': errors,
+            'storage_type': 'r2',
+            'message': f'Se subieron {len(uploaded_files)} archivo(s) a Cloudflare R2.',
+        }
+    except Exception as e:
+        print('R2 upload error:', e)
+        return None
+
 @app.route('/upload-attachments', methods=['POST', 'OPTIONS'])
 def upload_attachments():
     """
@@ -285,16 +394,21 @@ def upload_attachments():
     folder_name = f"{name}_{cid}".replace('__', '_').strip('_') or 'cliente_doc'
     folder_path = f'anexos/{folder_name}'
 
-    # 1) Intentar Google Drive primero (no hace falta activar Firebase Storage)
+    # 1) Google Drive
     result = _upload_attachments_to_drive(client_name, client_id, attachments)
     if result is not None:
         return jsonify(result)
 
-    # 2) Fallback a Firebase Storage si está configurado
+    # 2) Cloudflare R2 (S3 API)
+    result = _upload_attachments_to_r2(client_name, client_id, attachments)
+    if result is not None:
+        return jsonify(result)
+
+    # 3) Firebase Storage
     bucket = get_firebase_bucket()
     if not bucket:
         return jsonify({
-            'error': 'Configura Google Drive en Render (GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON y opcional GOOGLE_DRIVE_FOLDER_ID). Así no necesitas activar Firebase Storage. Ver GOOGLE_DRIVE_SETUP.md.',
+            'error': 'Configura al menos uno: Google Drive (GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON), Cloudflare R2 (R2_S3_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) o Firebase Storage. Ver GOOGLE_DRIVE_SETUP.md.',
             'success': False,
         }), 503
     uploaded_files = []
@@ -362,7 +476,21 @@ def drive_download():
     # Sanitizar nombre para Content-Disposition
     safe_name = re.sub(r'[^\w\s\-\.]', '_', file_name)[:200] or 'documento.pdf'
     try:
-        # 1) Firebase Storage: file_id = anexos/Nombre_123/Archivo.pdf
+        # 1) Cloudflare R2: file_id = r2/anexos/Nombre_123/Archivo.pdf
+        if file_id.startswith('r2/'):
+            client = get_r2_client()
+            bucket = get_r2_bucket_name()
+            if not client or not bucket:
+                return jsonify({'error': 'R2 no configurado'}), 503
+            key = file_id[3:]  # quitar prefijo "r2/"
+            obj = client.get_object(Bucket=bucket, Key=key)
+            data = obj['Body'].read()
+            return Response(
+                data,
+                mimetype='application/octet-stream',
+                headers={'Content-Disposition': f'attachment; filename="{safe_name}"'}
+            )
+        # 2) Firebase Storage: file_id = anexos/Nombre_123/Archivo.pdf
         if file_id.startswith('anexos/'):
             bucket = get_firebase_bucket()
             if not bucket:
@@ -374,7 +502,7 @@ def drive_download():
                 mimetype='application/octet-stream',
                 headers={'Content-Disposition': f'attachment; filename="{safe_name}"'}
             )
-        # 2) Google Drive: file_id = ID del archivo en Drive
+        # 3) Google Drive: file_id = ID del archivo en Drive
         drive = get_drive_service()
         if not drive:
             return jsonify({'error': 'Google Drive no configurado'}), 503
@@ -398,7 +526,30 @@ def list_folder():
     if not folder_id:
         return jsonify({'error': 'Falta folder_id', 'files': []}), 400
     try:
-        # 1) Firebase Storage: folder_id = anexos/Nombre_123
+        # 1) Cloudflare R2: folder_id = r2/anexos/Nombre_123
+        if folder_id.startswith('r2/'):
+            client = get_r2_client()
+            bucket = get_r2_bucket_name()
+            if not client or not bucket:
+                return jsonify({'error': 'R2 no configurado', 'files': []}), 503
+            prefix = folder_id[3:].rstrip('/') + '/'
+            paginator = client.get_paginator('list_objects_v2')
+            files = []
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for obj in page.get('Contents', []):
+                    key = obj.get('Key', '')
+                    if key == prefix or not key.startswith(prefix):
+                        continue
+                    name = key[len(prefix):].strip()
+                    if not name:
+                        continue
+                    file_id_r2 = f'r2/{key}'
+                    api_base = os.getenv('API_PUBLIC_URL', 'https://api-hv.onrender.com').rstrip('/')
+                    from urllib.parse import quote
+                    public_url = f'{api_base}/drive-download?file_id={quote(file_id_r2, safe="")}&file_name={quote(name, safe="")}'
+                    files.append({'id': file_id_r2, 'name': name, 'public_url': public_url})
+            return jsonify({'files': files})
+        # 2) Firebase Storage: folder_id = anexos/Nombre_123
         if folder_id.startswith('anexos/'):
             bucket = get_firebase_bucket()
             if not bucket:
@@ -418,7 +569,7 @@ def list_folder():
                     url = f'https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{b.name.replace("/", "%2F")}?alt=media'
                 files.append({'id': b.name, 'name': name, 'public_url': url})
             return jsonify({'files': files})
-        # 2) Google Drive: folder_id = ID de la carpeta
+        # 3) Google Drive: folder_id = ID de la carpeta
         drive = get_drive_service()
         if not drive:
             return jsonify({'error': 'Google Drive no configurado', 'files': []}), 503
