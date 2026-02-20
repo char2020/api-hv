@@ -33,12 +33,28 @@ startxref
 
 def main():
     api_url = (sys.argv[1] if len(sys.argv) > 1 else "https://api-hv.onrender.com").rstrip("/")
-    data_url = "data:application/pdf;base64," + base64.b64encode(MINI_PDF).decode()
+    # Si se pasa un archivo (ej. templates/hv.docx), subir ese; si no, PDF mínimo
+    file_path = sys.argv[2] if len(sys.argv) > 2 else None
+    if file_path:
+        try:
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
+            ext = file_path.lower().split(".")[-1] if "." in file_path else "bin"
+            mime = "application/pdf" if ext == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if ext == "docx" else "application/octet-stream"
+            name = file_path.split("/")[-1].split("\\")[-1]
+            data_url = f"data:{mime};base64," + base64.b64encode(file_bytes).decode()
+            print(f"   Usando archivo: {file_path} ({len(file_bytes)} bytes)")
+        except Exception as e:
+            print(f"   Error leyendo {file_path}: {e}")
+            sys.exit(1)
+    else:
+        data_url = "data:application/pdf;base64," + base64.b64encode(MINI_PDF).decode()
+        name = "test.pdf"
     payload = {
         "clientName": "Prueba Test",
         "clientId": "123456",
         "attachments": {
-            "cedula": {"name": "test.pdf", "dataUrl": data_url}
+            "cedula": {"name": name, "dataUrl": data_url}
         }
     }
     print(f"1. Comprobando estado de almacenamiento en {api_url}/storage-status ...")
