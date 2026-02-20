@@ -19,7 +19,7 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 55 * 1024 * 1024  # 55 MB
 # CORS con restricciones de seguridad - solo permitir orígenes específicos
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'https://generador-hojas-vida.web.app,https://generador-hojas-vida.firebaseapp.com').split(',')
-CORS(app, origins=allowed_origins, methods=['GET', 'POST'], allow_headers=['Content-Type'])
+CORS(app, origins=allowed_origins, methods=['GET', 'POST', 'DELETE', 'OPTIONS'], allow_headers=['Content-Type'])
 
 # Configuración de APIs de iLovePDF
 # API Principal: Usada en la API de cursos-certificados (GitHub) - ~250 conversiones
@@ -206,13 +206,14 @@ def _data_url_to_bytes(data_url):
         return None, mime
 
 def _upload_attachments_to_r2(client_name, client_id, attachments):
-    """Sube anexos a Cloudflare R2 (S3 API). folder_id = r2/anexos/Nombre_123 para list-folder y drive-download."""
+    """Sube anexos a R2. Carpeta = anexos/Nombre_Cliente_NumDoc para identificar por nombre del cliente."""
     client = get_r2_client()
     bucket = get_r2_bucket_name()
     if not client or not bucket:
         return None
-    name = re.sub(r'[\s/\\?*:]+', '_', client_name).strip('_') or 'Cliente'
-    cid = re.sub(r'[\s/\\?*:]+', '_', client_id).strip('_') or ''
+    # Nombre del cliente (legible) + número de documento para unicidad
+    name = re.sub(r'[\s/\\?*:]+', '_', (client_name or '').strip()).strip('_') or 'Cliente'
+    cid = re.sub(r'[\s/\\?*:]+', '_', (client_id or '').strip()).strip('_') or ''
     folder_name = f"{name}_{cid}".replace('__', '_').strip('_') or 'cliente_doc'
     prefix = f'anexos/{folder_name}/'
     uploaded_files = []
