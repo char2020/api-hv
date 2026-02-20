@@ -161,7 +161,8 @@ def get_drive_service():
         from google.oauth2.service_account import Credentials
         from googleapiclient.discovery import build
         cred_dict = json.loads(cred_json)
-        creds = Credentials.from_service_account_info(cred_dict, scopes=['https://www.googleapis.com/auth/drive.file'])
+        # drive (no drive.file) para poder escribir en carpetas compartidas con la cuenta de servicio (GOOGLE_DRIVE_FOLDER_ID)
+        creds = Credentials.from_service_account_info(cred_dict, scopes=['https://www.googleapis.com/auth/drive'])
         _drive_service = build('drive', 'v3', credentials=creds)
         return _drive_service
     except Exception as e:
