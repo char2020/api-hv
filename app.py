@@ -394,15 +394,28 @@ def upload_attachments():
     folder_name = f"{name}_{cid}".replace('__', '_').strip('_') or 'cliente_doc'
     folder_path = f'anexos/{folder_name}'
 
-    # 1) Google Drive
+    # 1) Google Drive (si falla por 403 u otros errores, probar alternativas)
     result = _upload_attachments_to_drive(client_name, client_id, attachments)
     if result is not None:
-        return jsonify(result)
+        uploaded = result.get('uploaded_files') or []
+        errs = result.get('errors') or []
+        # Si subió al menos un archivo, devolver ese resultado
+        if len(uploaded) > 0:
+            return jsonify(result)
+        # Si Drive falló por completo (0 subidos), probar R2 y Firebase
+        if errs and len(uploaded) == 0:
+            result = None
 
     # 2) Cloudflare R2 (S3 API)
-    result = _upload_attachments_to_r2(client_name, client_id, attachments)
+    if result is None:
+        result = _upload_attachments_to_r2(client_name, client_id, attachments)
     if result is not None:
-        return jsonify(result)
+        uploaded = result.get('uploaded_files') or []
+        errs = result.get('errors') or []
+        if len(uploaded) > 0:
+            return jsonify(result)
+        if errs and len(uploaded) == 0:
+            result = None
 
     # 3) Firebase Storage
     bucket = get_firebase_bucket()
