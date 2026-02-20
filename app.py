@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify, redirect
+from flask import Flask, request, send_file, jsonify, redirect, Response
 from flask_cors import CORS
 from docx import Document
 from docx.shared import RGBColor, Pt, Inches
@@ -104,7 +104,9 @@ def root():
         "message": "API de Generación de Hojas de Vida funcionando",
         "endpoints": {
             "/health": "GET - Verificar estado del servidor",
-            "/upload-attachments": "POST - Subir anexos a Firebase Storage (clientName, clientId, attachments)",
+            "/upload-attachments": "POST - Subir anexos a Google Drive o Firebase (clientName, clientId, attachments). Primero Drive; no requiere activar Firebase Storage.",
+            "/drive-download": "GET - Descargar archivo (file_id, file_name). Firebase: anexos/...; Drive: ID de archivo. Para admin/solicitudes (Fabian).",
+            "/list-folder": "GET - Listar archivos de carpeta (folder_id). Firebase: anexos/...; Drive: ID de carpeta. Para admin/solicitudes (Fabian).",
             "/generate-word": "POST - Generar documento Word (Hoja de Vida)",
             "/generate-cuenta-cobro": "POST - Generar cuenta de cobro desde template",
             "/convert-word-to-pdf": "POST - Convertir Word a PDF usando iLovePDF"
@@ -116,7 +118,7 @@ def health():
     """Endpoint de salud para verificar que el servidor está funcionando"""
     return jsonify({"status": "ok", "message": "API funcionando correctamente"})
 
-# --- Subida de anexos a Firebase Storage (mismo resultado que antes con Drive: Ver/Descargar en admin, sin ir a Drive) ---
+# --- Subida de anexos: primero Google Drive (sin activar Firebase Storage); si no está configurado, fallback a Firebase ---
 ATTACHMENT_NAMES = {
     'cedula': 'Cedula',
     'actaBachiller': 'Acta_Bachiller',
@@ -135,6 +137,27 @@ ATTACHMENT_NAMES = {
 }
 
 _firebase_app = None
+_drive_service = None
+
+def get_drive_service():
+    """Devuelve el cliente de Google Drive API si está configurado (GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON). Así no hace falta activar Firebase Storage."""
+    global _drive_service
+    if _drive_service is not None:
+        return _drive_service
+    cred_json = os.getenv('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON')
+    if not cred_json:
+        return None
+    try:
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+        cred_dict = json.loads(cred_json)
+        creds = Credentials.from_service_account_info(cred_dict, scopes=['https://www.googleapis.com/auth/drive.file'])
+        _drive_service = build('drive', 'v3', credentials=creds)
+        return _drive_service
+    except Exception as e:
+        print('Drive init error:', e)
+        _drive_service = None
+        return None
 
 def get_firebase_bucket():
     """Inicializa Firebase Admin (una vez) y devuelve el bucket de Storage."""
@@ -174,22 +197,69 @@ def _data_url_to_bytes(data_url):
     except Exception:
         return None, mime
 
+def _upload_attachments_to_drive(client_name, client_id, attachments):
+    """Sube anexos a Google Drive. Misma forma de respuesta que Firebase para el frontend."""
+    drive = get_drive_service()
+    if not drive:
+        return None
+    name = re.sub(r'[\s/\\?*:]+', '_', client_name).strip('_') or 'Cliente'
+    cid = re.sub(r'[\s/\\?*:]+', '_', client_id).strip('_') or ''
+    folder_name = f"{name}_{cid}".replace('__', '_').strip('_') or 'cliente_doc'
+    parent_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '').strip() or None
+    try:
+        from googleapiclient.http import MediaIoBaseUpload
+        # Crear carpeta por cliente
+        folder_meta = {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
+        if parent_id:
+            folder_meta['parents'] = [parent_id]
+        folder = drive.files().create(body=folder_meta, fields='id,webViewLink').execute()
+        folder_id = folder.get('id')
+        folder_link = folder.get('webViewLink') or f'https://drive.google.com/drive/folders/{folder_id}'
+        uploaded_files = []
+        errors = []
+        for key, att in attachments.items():
+            if not att or not att.get('dataUrl'):
+                continue
+            label = ATTACHMENT_NAMES.get(key, key)
+            fname = (att.get('name') or 'documento').strip()
+            ext = fname.split('.')[-1] if '.' in fname else 'pdf'
+            if ext.lower() not in ('pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'):
+                ext = 'pdf'
+            file_name = f'{label}.{ext}'
+            raw, content_type = _data_url_to_bytes(att['dataUrl'])
+            if raw is None:
+                errors.append(f'Error decodificando {key} ({file_name})')
+                continue
+            try:
+                media = MediaIoBaseUpload(io.BytesIO(raw), mimetype=content_type or 'application/octet-stream', resumable=True)
+                file_meta = {'name': file_name, 'parents': [folder_id]}
+                up = drive.files().create(body=file_meta, media_body=media, fields='id,webViewLink').execute()
+                web_link = up.get('webViewLink') or f'https://drive.google.com/file/d/{up.get("id")}/view'
+                uploaded_files.append({'key': key, 'name': file_name, 'file_id': up.get('id'), 'web_link': web_link})
+            except Exception as e:
+                errors.append(f'Error subiendo {key} ({file_name}): {e}')
+        return {
+            'success': True,
+            'folder_name': folder_name,
+            'folder_id': folder_id,
+            'drive_folder_link': folder_link,
+            'uploaded_files': uploaded_files,
+            'errors': errors,
+            'storage_type': 'drive',
+            'message': f'Se subieron {len(uploaded_files)} archivo(s) a Google Drive.',
+        }
+    except Exception as e:
+        print('Drive upload error:', e)
+        return None
+
 @app.route('/upload-attachments', methods=['POST', 'OPTIONS'])
 def upload_attachments():
     """
-    Sube anexos a Firebase Storage desde la API (evita CORS: el navegador solo habla con Render).
-    Mismo cuerpo que la antigua Cloud Function uploadToDrive: clientName, clientId, attachments (key -> {name, dataUrl}).
-    Respuesta igual: folder_name, folder_id, drive_folder_link, uploaded_files (key, name, file_id, web_link), storage_type: 'firebase'.
-    Así en el admin se ve Ver/Descargar como con Fabian, sin ir a Drive.
+    Sube anexos: primero intenta Google Drive (no requiere activar Firebase Storage).
+    Si Drive no está configurado, usa Firebase Storage. Mismo cuerpo y respuesta para el frontend.
     """
     if request.method == 'OPTIONS':
         return '', 204
-    bucket = get_firebase_bucket()
-    if not bucket:
-        return jsonify({
-            'error': 'Firebase Storage no configurado. En Render añade la variable FIREBASE_SERVICE_ACCOUNT_JSON (JSON de la cuenta de servicio).',
-            'success': False,
-        }), 503
     data = request.get_json() or {}
     client_name = (data.get('clientName') or '').strip()
     client_id = (data.get('clientId') or '').strip()
@@ -202,6 +272,19 @@ def upload_attachments():
     cid = re.sub(r'[\s/\\?*:]+', '_', client_id).strip('_') or ''
     folder_name = f"{name}_{cid}".replace('__', '_').strip('_') or 'cliente_doc'
     folder_path = f'anexos/{folder_name}'
+
+    # 1) Intentar Google Drive primero (no hace falta activar Firebase Storage)
+    result = _upload_attachments_to_drive(client_name, client_id, attachments)
+    if result is not None:
+        return jsonify(result)
+
+    # 2) Fallback a Firebase Storage si está configurado
+    bucket = get_firebase_bucket()
+    if not bucket:
+        return jsonify({
+            'error': 'Configura Google Drive en Render (GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON y opcional GOOGLE_DRIVE_FOLDER_ID). Así no necesitas activar Firebase Storage. Ver GOOGLE_DRIVE_SETUP.md.',
+            'success': False,
+        }), 503
     uploaded_files = []
     errors = []
     try:
@@ -246,6 +329,89 @@ def upload_attachments():
         })
     except Exception as e:
         return jsonify({'error': str(e), 'success': False}), 500
+
+@app.route('/drive-download', methods=['GET'])
+def drive_download():
+    """
+    Descarga un archivo para el admin (solicitudes / flujo Fabian).
+    - file_id: ruta en Firebase (anexos/Nombre_123/Archivo.pdf) o ID de archivo en Google Drive.
+    - file_name: nombre para la descarga.
+    Así el admin puede Ver/Descargar tanto archivos en Firebase Storage como en Drive.
+    """
+    file_id = (request.args.get('file_id') or '').strip()
+    file_name = (request.args.get('file_name') or 'documento.pdf').strip()
+    if not file_id:
+        return jsonify({'error': 'Falta file_id'}), 400
+    # Sanitizar nombre para Content-Disposition
+    safe_name = re.sub(r'[^\w\s\-\.]', '_', file_name)[:200] or 'documento.pdf'
+    try:
+        # 1) Firebase Storage: file_id = anexos/Nombre_123/Archivo.pdf
+        if file_id.startswith('anexos/'):
+            bucket = get_firebase_bucket()
+            if not bucket:
+                return jsonify({'error': 'Firebase Storage no configurado'}), 503
+            blob = bucket.blob(file_id)
+            data = blob.download_as_bytes()
+            return Response(
+                data,
+                mimetype='application/octet-stream',
+                headers={'Content-Disposition': f'attachment; filename="{safe_name}"'}
+            )
+        # 2) Google Drive: file_id = ID del archivo en Drive
+        drive = get_drive_service()
+        if not drive:
+            return jsonify({'error': 'Google Drive no configurado'}), 503
+        content = drive.files().get_media(fileId=file_id).execute()
+        return Response(
+            content,
+            mimetype='application/octet-stream',
+            headers={'Content-Disposition': f'attachment; filename="{safe_name}"'}
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/list-folder', methods=['GET'])
+def list_folder():
+    """
+    Lista archivos de una carpeta para el admin (solicitudes / flujo Fabian).
+    - folder_id: ruta en Firebase (anexos/Nombre_123) o ID de carpeta en Google Drive.
+    Devuelve [{ id, name, public_url? }]. public_url solo en Firebase; en Drive se usa /drive-download.
+    """
+    folder_id = (request.args.get('folder_id') or '').strip()
+    if not folder_id:
+        return jsonify({'error': 'Falta folder_id', 'files': []}), 400
+    try:
+        # 1) Firebase Storage: folder_id = anexos/Nombre_123
+        if folder_id.startswith('anexos/'):
+            bucket = get_firebase_bucket()
+            if not bucket:
+                return jsonify({'error': 'Firebase Storage no configurado', 'files': []}), 503
+            prefix = folder_id.rstrip('/') + '/'
+            blobs = list(bucket.list_blobs(prefix=prefix))
+            files = []
+            for b in blobs:
+                if b.name == prefix or not b.name.startswith(prefix):
+                    continue
+                name = b.name[len(prefix):].strip()
+                if not name:
+                    continue
+                try:
+                    url = b.generate_signed_url(expiration=timedelta(days=365), method='GET')
+                except Exception:
+                    url = f'https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{b.name.replace("/", "%2F")}?alt=media'
+                files.append({'id': b.name, 'name': name, 'public_url': url})
+            return jsonify({'files': files})
+        # 2) Google Drive: folder_id = ID de la carpeta
+        drive = get_drive_service()
+        if not drive:
+            return jsonify({'error': 'Google Drive no configurado', 'files': []}), 503
+        q = f"'{folder_id}' in parents and trashed = false"
+        results = drive.files().list(q=q, pageSize=100, fields='files(id, name)').execute()
+        items = results.get('files', [])
+        files = [{'id': f['id'], 'name': f.get('name', ''), 'public_url': None} for f in items]
+        return jsonify({'files': files})
+    except Exception as e:
+        return jsonify({'error': str(e), 'files': []}), 500
 
 def convert_word_to_pdf_with_ilovepdf(word_file_bytes, filename='document.docx'):
     """
