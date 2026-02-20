@@ -15,6 +15,8 @@ import time
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+# Permitir bodies grandes para upload-attachments (varios PDFs en base64)
+app.config['MAX_CONTENT_LENGTH'] = 55 * 1024 * 1024  # 55 MB
 # CORS con restricciones de seguridad - solo permitir orígenes específicos
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'https://generador-hojas-vida.web.app,https://generador-hojas-vida.firebaseapp.com').split(',')
 CORS(app, origins=allowed_origins, methods=['GET', 'POST'], allow_headers=['Content-Type'])
@@ -117,6 +119,14 @@ def root():
 def health():
     """Endpoint de salud para verificar que el servidor está funcionando"""
     return jsonify({"status": "ok", "message": "API funcionando correctamente"})
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    """Cuerpo de la petición demasiado grande (varios PDFs en base64). Pedir comprimir archivos."""
+    return jsonify({
+        'error': 'Los archivos son demasiado grandes. Comprime los PDFs (menos de 2 MB cada uno) o sube menos archivos a la vez.',
+        'success': False
+    }), 413
 
 # --- Subida de anexos: primero Google Drive (sin activar Firebase Storage); si no está configurado, fallback a Firebase ---
 ATTACHMENT_NAMES = {
@@ -237,7 +247,8 @@ def _upload_attachments_to_drive(client_name, client_id, attachments):
                 web_link = up.get('webViewLink') or f'https://drive.google.com/file/d/{up.get("id")}/view'
                 uploaded_files.append({'key': key, 'name': file_name, 'file_id': up.get('id'), 'web_link': web_link})
             except Exception as e:
-                errors.append(f'Error subiendo {key} ({file_name}): {e}')
+                err_msg = str(e).split('\n')[0][:200] if e else 'Error desconocido'
+                errors.append(f'Error subiendo {key} ({file_name}): {err_msg}')
         return {
             'success': True,
             'folder_name': folder_name,
@@ -303,8 +314,13 @@ def upload_attachments():
             if raw is None:
                 errors.append(f'Error decodificando {key} ({file_name})')
                 continue
-            blob = bucket.blob(file_path)
-            blob.upload_from_string(raw, content_type=content_type or 'application/octet-stream')
+            try:
+                blob = bucket.blob(file_path)
+                blob.upload_from_string(raw, content_type=content_type or 'application/octet-stream')
+            except Exception as e:
+                err_msg = str(e).split('\n')[0][:200] if e else 'Error desconocido'
+                errors.append(f'Error subiendo {key} ({file_name}): {err_msg}')
+                continue
             try:
                 url = blob.generate_signed_url(expiration=timedelta(days=365 * 10), method='GET')
             except Exception:
